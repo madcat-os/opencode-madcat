@@ -2,6 +2,22 @@
 
 All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/opencode-plugin`) are documented here.
 
+## 2.8.0 — job search removed; releases cut from tags
+
+### Removed
+
+- `jobs_search` and `jobs_providers` tools (`src/tools/jobs.ts`) and the Firefox
+  cookie reader they depended on (`src/lib/firefox.ts`). The WAAS provider read
+  the workatastartup.com SSO cookie straight out of the local Firefox profile's
+  `cookies.sqlite`; the HN, Just Join IT and NoFluffJobs providers go with it.
+  Any `[mcp].disabled_tools` entry naming them is now a no-op.
+
+### Changed
+
+- Release workflow runs only on pushed tags `v*`, no longer on every push to
+  `master`/`v2.0`. It fails if the tag does not match `package.json`'s version;
+  `vX.Y.Z` publishes as `latest`, a hyphenated prerelease as `next`.
+
 ## 2.7.0 — the sign-in is the database credential
 
 ### Changed
@@ -23,9 +39,6 @@ All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/openco
   store on a host where someone signed in.
 - AGENTS.md install docs updated for the v2.2 CLI (`opencode plugin add` /
   `update` / `list`).
-- Release workflow runs only on pushed tags `v*`, no longer on every push to
-  `master`/`v2.0`. It fails if the tag does not match `package.json`'s version;
-  `vX.Y.Z` publishes as `latest`, a hyphenated prerelease as `next`.
 
 ## 2.6.1 — TTS requests carry the menubar session
 

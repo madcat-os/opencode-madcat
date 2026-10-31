@@ -46,7 +46,6 @@ import * as smoketest from "./tools/smoketest"
 import * as tools from "./tools/tools"
 import { bindToolLister } from "./tools/tools"
 import * as tts from "./tools/tts"
-import * as jobs from "./tools/jobs"
 import * as workspace from "./tools/workspace"
 import * as whoami from "./tools/whoami"
 import * as icons from "./tools/icons"
@@ -130,7 +129,6 @@ export default Plugin.define({
       ...ns("geo", geo),
       ...ns("icons", icons),
       ...ns("infra", infra),
-      ...ns("jobs", jobs),
       ...ns("json", json),
       ...ns("kindle", kindle),
       ...ns("messages", messages),

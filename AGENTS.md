@@ -37,7 +37,6 @@ src/
     mirror.ts       # Filesystem → EEMS doctrine mirroring
     doctrines.ts    # Loads doctrine markdown files from src/doctrines/
     repos.ts        # Infrastructure prompt generation
-    firefox.ts      # Firefox cookie import for job search
   tools/            # One file per tool namespace — exports tool definitions via tool() helper
     memory.ts       # EEMS memory (recall, store, list, get, forget, classify, link, graph)
     sessions.ts     # Session list, status, get, diff, children, search, ingest

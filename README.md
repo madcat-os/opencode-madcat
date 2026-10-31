@@ -29,7 +29,7 @@ data. The Kindle skills read `MADCAT_MAIL_SENDER`, `MADCAT_KINDLE_EMAIL` and
 ## Tool namespaces
 
 Memory (EEMS), sessions, whoami, cart, TTS, Signal, WhatsApp, PRIME locks,
-cross-session messaging, session control, infra and jobs,
+cross-session messaging, session control, infra,
 indexing/ingest, and more — one file per namespace under
 `src/tools/`.
 
