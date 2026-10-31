@@ -1,0 +1,49 @@
+name: Publish to npmjs
+
+on:
+  push:
+    branches:
+      - master
+      - v2.0
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # The package ships TypeScript source only; there is no build step, so
+      # no dependency install is needed to publish.
+      #
+      # master publishes as `latest`; every other branch publishes under `next`
+      # so hosts pinned to @latest are not upgraded by a pre-release line.
+      - name: Resolve dist-tag
+        run: |
+          TAG=latest
+          if [ "${GITHUB_REF_NAME}" != "master" ]; then TAG=next; fi
+          echo "DIST_TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "publishing ${GITHUB_REF_NAME} as dist-tag ${TAG}"
+
+      # A version that already exists on the registry is skipped, not failed —
+      # doc-only pushes must not break the workflow.
+      - name: Publish
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${NAME}@${VERSION} already on npmjs — skipping publish"
+            exit 0
+          fi
+          npm publish --access public --tag "${DIST_TAG}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
