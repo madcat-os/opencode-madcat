@@ -23,6 +23,9 @@ All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/openco
   store on a host where someone signed in.
 - AGENTS.md install docs updated for the v2.2 CLI (`opencode plugin add` /
   `update` / `list`).
+- Release workflow runs only on pushed tags `v*`, no longer on every push to
+  `master`/`v2.0`. It fails if the tag does not match `package.json`'s version;
+  `vX.Y.Z` publishes as `latest`, a hyphenated prerelease as `next`.
 
 ## 2.6.1 — TTS requests carry the menubar session
 

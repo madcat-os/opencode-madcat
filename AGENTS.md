@@ -10,7 +10,9 @@ Published to npmjs as `@madcat-os/opencode-madcat` from GitHub Actions. Consumed
 
 - **Registry**: npmjs (`https://registry.npmjs.org`)
 - **Git**: `git@github.com:madcat-os/opencode-madcat.git`
-- **CI**: GitHub Actions — push to `master` publishes (`.github/workflows/publish.yml`; secret `NPM_TOKEN`)
+- **CI**: GitHub Actions — pushing a tag `v*` publishes (`.github/workflows/publish.yml`; secret `NPM_TOKEN`).
+  The tag must equal `v<package.json version>`; `vX.Y.Z` → dist-tag `latest`, a hyphenated
+  prerelease (`vX.Y.Z-rc.1`) → `next`. Branch pushes publish nothing.
 
 ## Structure
 
@@ -132,9 +134,10 @@ bun -e 'const m = await import("./src/index.ts"); console.log("OK:", typeof m.de
 # 4. Commit
 git add -A && git commit -m "X.Y.Z: description"
 
-# 5. Push (GitHub Actions publishes) or publish manually
+# 5. Push the commit, then tag it — the tag push is what publishes
 git push origin master
-# or: npm publish --registry https://registry.npmjs.org --access public
+git tag vX.Y.Z && git push origin vX.Y.Z
+# or publish manually: npm publish --registry https://registry.npmjs.org --access public
 ```
 
 ### Install on a host

@@ -1,10 +1,11 @@
 name: Publish to npmjs
 
+# Releases are cut by pushing a tag: `git tag v2.7.1 && git push origin v2.7.1`.
+# Pushes to branches do nothing.
 on:
   push:
-    branches:
-      - master
-      - v2.0
+    tags:
+      - "v*"
 
 permissions:
   contents: read
@@ -22,20 +23,32 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      # The tag is the release; package.json must agree with it, otherwise the
+      # tarball would publish under a version the tag does not name.
+      - name: Check tag matches package.json
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "${TAG_VERSION}" != "${PKG_VERSION}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}"
+            exit 1
+          fi
+
       # The package ships TypeScript source only; there is no build step, so
       # no dependency install is needed to publish.
       #
-      # master publishes as `latest`; every other branch publishes under `next`
-      # so hosts pinned to @latest are not upgraded by a pre-release line.
+      # A plain vX.Y.Z publishes as `latest`; a prerelease (vX.Y.Z-rc.1, any
+      # version containing a hyphen) publishes under `next` so hosts pinned to
+      # @latest are not upgraded by it.
       - name: Resolve dist-tag
         run: |
           TAG=latest
-          if [ "${GITHUB_REF_NAME}" != "master" ]; then TAG=next; fi
+          case "${GITHUB_REF_NAME}" in *-*) TAG=next ;; esac
           echo "DIST_TAG=${TAG}" >> "$GITHUB_ENV"
           echo "publishing ${GITHUB_REF_NAME} as dist-tag ${TAG}"
 
       # A version that already exists on the registry is skipped, not failed —
-      # doc-only pushes must not break the workflow.
+      # re-pushing a tag must not break the workflow.
       - name: Publish
         run: |
           NAME=$(node -p "require('./package.json').name")
