@@ -4,17 +4,22 @@
  * The madcat menubar keeps a madcat-web desktop session token in
  * `{data_dir}/Madcat/session-<host>.json` (macOS:
  * `~/Library/Application Support/Madcat/`, Linux: `$XDG_DATA_HOME/Madcat/`).
- * We read that token, ask `{web}/api/me` who it belongs to, and derive the
- * user's instanced database the same way the madcat server does
+ * We read that token and ask `{web}/api/me` who it belongs to. madcat-web
+ * provisions each user a Postgres role that owns only `{db_name}_eems` and
+ * answers with the full connection string as `db_url`; that is what we
+ * connect with, so the sign-in is the credential and a client holds nothing
+ * that reaches another user's data.
+ *
+ * When `/api/me` carries no `db_url` (provisioning off on the server) we fall
+ * back to deriving the database the way the madcat server does
  * (`memory::user_dsn`): `[database].user_dsn` with `{db_name}` filled in, or
- * the base DSN with its database renamed to `{db_name}_{db}`.
+ * `[database].dsn` with its database renamed to `{db_name}_{db}` — shared
+ * credentials, database selected by the token.
  *
- * The token never touches Postgres — it only selects the database. Postgres
- * credentials still come from `[database].dsn`.
- *
- * Resolution is strict: no session file, expired token, 401, unreachable
- * madcat-web or a missing database all throw. Memory, index and the doctrine
- * mirror all require a resolved principal.
+ * Resolution is strict once a session file exists: an expired token, 401,
+ * unreachable madcat-web or an unreachable database all throw. Hosts with no
+ * session file at all (headless serves) are handled by native.ts, which uses
+ * the global `[database].dsn` instead; see `hasSession()`.
  */
 
 import { existsSync, readFileSync } from "node:fs"
@@ -42,6 +47,14 @@ export interface ResolvedPrincipal {
   dsn: string
   /** Database name on the server. */
   database: string
+  /** Postgres role the DSN connects as. */
+  role: string
+  /**
+   * `scoped`: `db_url` from madcat-web, a role that owns only this database.
+   * `derived`: `[database].dsn` credentials with the database name swapped —
+   * the token chose the database but did not restrict access.
+   */
+  access: "scoped" | "derived"
   web: string
 }
 
@@ -72,6 +85,16 @@ interface SessionFile {
   id: string
   email?: string | null
   name?: string | null
+}
+
+/**
+ * Whether a menubar session file exists at all — valid or not. This is the
+ * line between "nobody signed in on this host" (fall back to the shared DSN)
+ * and "someone signed in and it broke" (throw, never write their memories
+ * into the shared database by accident).
+ */
+export function hasSession(web: string = webUrl()): boolean {
+  return existsSync(sessionPath(web))
 }
 
 function readSession(web: string, scope = "eems"): { token: string; file: SessionFile; path: string } {
@@ -113,6 +136,15 @@ function splitDsn(dsn: string): { prefix: string; db: string; query: string } {
   const m = dsn.match(/^([a-z]+:\/\/[^/]*\/)([^?]*)(\?.*)?$/i)
   if (!m || !m[2]) throw new Error("eems: [database].dsn names no database")
   return { prefix: m[1], db: m[2], query: m[3] ?? "" }
+}
+
+/** Role (username) a DSN connects as, or `?` when it carries none. Never returns the password. */
+export function dsnRole(dsn: string): string {
+  try {
+    return decodeURIComponent(new URL(dsn).username) || "?"
+  } catch {
+    return "?"
+  }
 }
 
 /** Instanced DSN for `dbName`: `[database].user_dsn` template, else `{ident}_{db}` on the base server. */
@@ -160,23 +192,37 @@ let resolvedAt = 0
 
 async function resolveOnce(): Promise<ResolvedPrincipal> {
   const web = webUrl()
-  const base = eemsPgDsn()
-  if (!base) throw new Error("eems: no Postgres DSN configured ([database].dsn in config.toml)")
-
   const { token, file, path } = readSession(web)
   const me = await fetchMe(web, token)
   const dbName: string | undefined = me.db_name
   if (!dbName) throw new Error(`eems: ${web}/api/me returned no db_name for ${me.email ?? me.id}`)
+  const who = me.email ?? dbName
 
-  const { dsn, database } = userDsn(base, dbName)
+  // Preferred: the user's own role + database, minted by madcat-web.
+  // Fallback: shared credentials with the database name derived from db_name.
+  let dsn: string
+  let database: string
+  let access: ResolvedPrincipal["access"]
+  if (typeof me.db_url === "string" && me.db_url) {
+    dsn = me.db_url
+    database = splitDsn(dsn).db
+    access = "scoped"
+  } else {
+    const base = eemsPgDsn()
+    if (!base) throw new Error(`eems: ${web}/api/me returned no db_url for ${who} and no [database].dsn is configured`)
+    ;({ dsn, database } = userDsn(base, dbName))
+    access = "derived"
+  }
 
-  // Database must already exist — creation is the madcat server's job.
-  const probe = postgres(base, { max: 1, connect_timeout: 10, onnotice: () => {} })
+  // Connect as the user once so a bad credential, a missing database or a
+  // revoked CONNECT shows up here with a clear message, not deep in a tool.
+  const probe = postgres(dsn, { max: 1, connect_timeout: 10, onnotice: () => {} })
   try {
-    const rows = await probe`SELECT 1 FROM pg_database WHERE datname = ${database}`
-    if (rows.length === 0) {
-      throw new Error(`eems: database ${database} for ${me.email ?? dbName} does not exist on the EEMS server`)
-    }
+    await probe`SELECT 1`
+  } catch (e) {
+    const msg = (e as Error).message
+    if (/does not exist/.test(msg)) throw new Error(`eems: database ${database} for ${who} does not exist on the EEMS server`)
+    throw new Error(`eems: cannot connect to ${database} as ${dsnRole(dsn)} for ${who}: ${msg}`)
   } finally {
     await probe.end({ timeout: 2 })
   }
@@ -192,6 +238,8 @@ async function resolveOnce(): Promise<ResolvedPrincipal> {
     },
     dsn,
     database,
+    role: dsnRole(dsn),
+    access,
     web,
   }
 }
@@ -213,11 +261,12 @@ export function resolvePrincipal(): Promise<ResolvedPrincipal> {
 
 /** Non-throwing variant for diagnostics (whoami). */
 export async function principalStatus(): Promise<
-  { ok: true; principal: Principal; database: string } | { ok: false; reason: string; sessionFile: string }
+  | { ok: true; principal: Principal; database: string; role: string; access: ResolvedPrincipal["access"] }
+  | { ok: false; reason: string; sessionFile: string }
 > {
   try {
     const r = await resolvePrincipal()
-    return { ok: true, principal: r.principal, database: r.database }
+    return { ok: true, principal: r.principal, database: r.database, role: r.role, access: r.access }
   } catch (e) {
     return { ok: false, reason: (e as Error).message, sessionFile: sessionPath() }
   }

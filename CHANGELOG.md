@@ -2,6 +2,28 @@
 
 All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/opencode-plugin`) are documented here.
 
+## 2.7.0 — the sign-in is the database credential
+
+### Changed
+
+- EEMS access is now OAuth-scoped. madcat-web provisions each user a Postgres
+  role that owns only `{db_name}_eems` and returns its connection string as
+  `db_url` from `/api/me`; `principal.ts` connects with that instead of
+  `[database].dsn` with the database name swapped. The client no longer holds
+  a shared credential that can reach another user's data. When the server
+  returns no `db_url` the old derived DSN is still used; `whoami_info.eems`
+  reports `role` and `access: "scoped" | "derived"` so the difference is
+  visible. The readiness probe connects as the user (not the base role), so a
+  bad credential or revoked CONNECT surfaces at resolution time with the
+  database and role named.
+- Hosts with no menubar session file at all (headless serves) fall back to the
+  global `[database].dsn`; `whoami_info.eems.mode` is `"shared"`. A session
+  file that exists but is expired, rejected or unresolvable still throws with a
+  sign-in instruction — memories are never silently written to the shared
+  store on a host where someone signed in.
+- AGENTS.md install docs updated for the v2.2 CLI (`opencode plugin add` /
+  `update` / `list`).
+
 ## 2.6.1 — TTS requests carry the menubar session
 
 ### Fixed

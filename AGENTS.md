@@ -70,15 +70,22 @@ tsvector `ts_rank`, RRF-fused in SQL. Embeddings come from the `[embedding]` end
 Which database a call hits (`src/lib/native.ts`):
 
 1. **Dual-DSN** (`EEMS_DSN_CORE` + `EEMS_DSN_DOUBLE` set): per-agent DSN by `context.agent`.
-2. **Signed-in principal** (`src/lib/principal.ts`): the Madcat menubar's desktop session file
-   (`~/Library/Application Support/Madcat/session-<host>.json`, Linux `$XDG_DATA_HOME/Madcat/`)
-   → `GET {web}/api/me` → `db_name` → `{db_name}_{db}` on the `[database].dsn` server
-   (`-` → `_`), or `[database].user_dsn` with `{db_name}` filled in. The database must already
-   exist; the madcat server creates it.
+2. **Signed-in principal** (`src/lib/principal.ts`) — a Madcat menubar desktop session file
+   exists (`~/Library/Application Support/Madcat/session-<host>.json`, Linux
+   `$XDG_DATA_HOME/Madcat/`) → `GET {web}/api/me` → **`db_url`**: a connection string for a
+   Postgres role madcat-web provisioned for that user, owning only `{db_name}_eems`. The
+   sign-in is the credential; the client never holds anything that reaches another user's
+   data. `whoami_info.eems` shows `access: "scoped"`. If the server returns no `db_url`
+   (provisioning off), the DSN is derived instead — `[database].dsn` with the database renamed
+   to `{db_name}_{db}` (`-` → `_`), or `[database].user_dsn` with `{db_name}` filled in —
+   and `access: "derived"` flags that shared credentials are in use.
+3. **Shared** — no session file at all (headless serve): the global `[database].dsn`.
+   `whoami_info.eems.mode` is `"shared"` with the role it connects as.
 
-No fallback: missing/expired session, 401, unreachable madcat-web, or a missing instanced DB
-makes `memory_*` / `index_*` / the doctrine mirror fail with a sign-in instruction. Plugin load
-is unaffected; `whoami_info.eems` reports the state.
+A session file that exists but is expired, rejected (401), or whose madcat-web/database is
+unreachable makes `memory_*` / `index_*` / the doctrine mirror throw with a sign-in
+instruction — it is never silently downgraded to the shared store. Plugin load is unaffected;
+`whoami_info.eems` reports the state.
 
 ## Audio playback
 
@@ -133,8 +140,10 @@ git push origin master
 ### Install on a host
 
 ```bash
-# Proper way — handles cache, config update, Bun install
-opencode plugin '@madcat-os/opencode-madcat@X.Y.Z' --global --force
+# Proper way — handles cache, config update, Bun install (opencode v2.2+)
+opencode plugin add '@madcat-os/opencode-madcat@X.Y.Z'   # first install
+opencode plugin update                                   # bump to the latest published
+opencode plugin list                                     # confirm the version that loaded
 
 # Then restart the serve
 systemctl --user restart homebrew.opencode-serve.service
@@ -158,7 +167,7 @@ bun -e 'const m = await import("./src/index.ts"); console.log(typeof m.default)'
 1. **Never `npm install` in `~/.config/opencode/`** — creates `node_modules/` that shadows the cache. Use `opencode plugin` CLI only.
 2. **Never leave `.opencode/` in the serve's working directory** (e.g. `/home/madcat/.opencode/`) — project-level config merges in and can inject bogus plugins.
 3. **Always type-check before publishing** — syntax errors (even a missing comma) silently kill the entire plugin with zero log output from the serve.
-4. **Memory tools need a menubar sign-in** — on a host without a `session-<host>.json` (and no dual-DSN env), every `memory_*` / `index_*` call throws. Check `whoami_info.eems.reason`.
+4. **Memory tools follow the menubar sign-in** — with a `session-<host>.json` present, every `memory_*` / `index_*` call goes to that user's own database and throws if the session is expired or rejected (no fallback). Without one, the global `[database].dsn` is used. Check `whoami_info.eems`.
 5. **Plugin tools are NOT bash commands** — agents should call them as MCP tools. If an agent runs `whoami_info` in bash, the plugin isn't loaded.
 
 ## Configuration

@@ -9,18 +9,19 @@
  * 1. Dual-DSN mode (`EEMS_DSN_CORE` + `EEMS_DSN_DOUBLE` set): each agent
  *    role gets a store on its own pre-configured DSN. Index and mirror use
  *    the core DSN.
- * 2. Signed-in principal (madcat menubar session → `/api/me` → `db_name`):
- *    the user's instanced database, `{db_name}_{db}` on the base server.
- *    See principal.ts.
- *
- * There is no fallback to the shared base database: without one of the two
- * above, every store/index access throws with a sign-in instruction.
+ * 2. Signed-in principal (madcat menubar session file exists): `/api/me` →
+ *    `db_url`, the user's own role and database. See principal.ts. A session
+ *    that exists but is expired, rejected or unreachable throws with a
+ *    sign-in instruction — never silently downgraded to the shared store.
+ * 3. No session file on this host (headless serve): the global
+ *    `[database].dsn` — one shared store for whoever runs the serve.
  */
 
 import { MemoryStore, CodeIndex } from "./eems.ts"
 import { Embedder } from "./embed.ts"
 import { hasDualDsn, dsnForAgent } from "./user-resolver.ts"
-import { resolvePrincipal } from "./principal.ts"
+import { hasSession, resolvePrincipal } from "./principal.ts"
+import { eemsPgDsn } from "./config.ts"
 import type { ToolContext } from "./identity.ts"
 
 export type { MemoryStore, CodeIndex } from "./eems.ts"
@@ -51,13 +52,34 @@ function indexFor(dsn: string): CodeIndex {
   return i
 }
 
-/** DSN for the default (non-agent-scoped) store: dual-DSN core, else the principal's instance. */
-async function defaultDsn(): Promise<string> {
-  if (hasDualDsn()) return dsnForAgent("core")!
-  return (await resolvePrincipal()).dsn
+/** Which of the three routes applies on this host right now. */
+export type EemsMode = "dual-dsn" | "principal" | "shared"
+
+export function eemsMode(): EemsMode {
+  if (hasDualDsn()) return "dual-dsn"
+  return hasSession() ? "principal" : "shared"
 }
 
-/** Default MemoryStore — dual-DSN core, else the signed-in principal's database. */
+/** The global `[database].dsn`, for hosts where nobody is signed in. */
+export function sharedDsn(): string {
+  const dsn = eemsPgDsn()
+  if (!dsn) throw new Error("eems: no menubar session on this host and no [database].dsn in config.toml")
+  return dsn
+}
+
+/** DSN for the default (non-agent-scoped) store: dual-DSN core, the principal's instance, or the shared store. */
+async function defaultDsn(): Promise<string> {
+  switch (eemsMode()) {
+    case "dual-dsn":
+      return dsnForAgent("core")!
+    case "principal":
+      return (await resolvePrincipal()).dsn
+    case "shared":
+      return sharedDsn()
+  }
+}
+
+/** Default MemoryStore — dual-DSN core, the signed-in principal's database, or the shared store. */
 export async function memoryStore(): Promise<MemoryStore> {
   return storeFor(await defaultDsn())
 }
@@ -65,7 +87,7 @@ export async function memoryStore(): Promise<MemoryStore> {
 /**
  * MemoryStore for a tool call. In dual-DSN mode `context.agent === "double"`
  * routes to the double DSN; everything else goes to core. Otherwise the
- * principal's instanced database.
+ * default store (principal's instance, or shared).
  */
 export async function memoryStoreForContext(context?: ToolContext): Promise<MemoryStore> {
   if (context && hasDualDsn()) {

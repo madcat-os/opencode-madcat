@@ -17,7 +17,8 @@ import { parse } from "smol-toml"
 import { meshHosts, webDomain } from "../lib/config.ts"
 import { readLock, coreSql } from "../lib/db.ts"
 import { hasDualDsn } from "../lib/user-resolver.ts"
-import { principalStatus } from "../lib/principal.ts"
+import { dsnRole, principalStatus, sessionPath } from "../lib/principal.ts"
+import { eemsMode, sharedDsn } from "../lib/native.ts"
 import { Buffer } from "node:buffer"
 import type { ToolContext } from "../lib/identity"
 
@@ -103,6 +104,49 @@ function hardware(): { cpu: string; cores: number; ram_gb: number } {
   }
 }
 
+/** Which EEMS database this host's memory/index calls land in, and as whom. */
+function eemsBlock(
+  route: ReturnType<typeof eemsMode>,
+  status: Awaited<ReturnType<typeof principalStatus>> | null,
+  context: ToolContext,
+): Record<string, unknown> {
+  if (route === "dual-dsn") return { mode: "dual-dsn", agent: context.agent === "double" ? "double" : "core" }
+  if (route === "shared") {
+    let role: string | null = null
+    let reason: string | null = null
+    try {
+      role = dsnRole(sharedDsn())
+    } catch (e) {
+      reason = (e as Error).message
+    }
+    return reason
+      ? { mode: "unavailable", reason, fix: "Set [database].dsn in config.toml, or sign in with the Madcat menubar." }
+      : {
+          mode: "shared",
+          role,
+          note: `No menubar session at ${sessionPath()}; using the global [database].dsn. Sign in to use your own database.`,
+        }
+  }
+  if (status?.ok) {
+    return {
+      mode: "principal",
+      user: status.principal.email ?? status.principal.id,
+      database: status.database,
+      role: status.role,
+      access: status.access,
+      ...(status.access === "derived"
+        ? { note: "madcat-web returned no db_url; connected with shared [database].dsn credentials." }
+        : {}),
+      session_expires: new Date(status.principal.expiresAt * 1000).toISOString(),
+    }
+  }
+  return {
+    mode: "unavailable",
+    reason: status?.reason ?? "unknown",
+    fix: "A menubar session exists but did not resolve. Sign in again with the Madcat menubar; memory_* and index_* tools will not fall back to the shared store.",
+  }
+}
+
 export const info = tool({
   description:
     "Identify the current agent session — session ID, host, agent, model, persona, " +
@@ -112,9 +156,10 @@ export const info = tool({
   async execute(_args: {}, context: ToolContext) {
     const now = new Date()
     const self = selfMeshName()
+    const eemsRoute = eemsMode()
     const [primeLock, eems] = await Promise.all([
       readLock("prime").catch(() => null),
-      hasDualDsn() ? Promise.resolve(null) : principalStatus(),
+      eemsRoute === "principal" ? principalStatus() : Promise.resolve(null),
     ])
     const primeHolder = primeLock?.session_id ?? null
     const isPrime = primeHolder === context.sessionID
@@ -175,20 +220,7 @@ export const info = tool({
           is_self: isPrime,
         },
         persona: personaBlock,
-        eems: hasDualDsn()
-          ? { mode: "dual-dsn", agent: context.agent === "double" ? "double" : "core" }
-          : eems?.ok
-            ? {
-                mode: "principal",
-                user: eems.principal.email ?? eems.principal.id,
-                database: eems.database,
-                session_expires: new Date(eems.principal.expiresAt * 1000).toISOString(),
-              }
-            : {
-                mode: "unavailable",
-                reason: eems?.reason ?? "unknown",
-                fix: "Sign in with the Madcat menubar; memory_* and index_* tools require it.",
-              },
+        eems: eemsBlock(eemsRoute, eems, context),
         comms,
         host: {
           name: self,
