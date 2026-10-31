@@ -13,7 +13,8 @@ import { execSync } from "child_process"
 import { writeFileSync, unlinkSync, renameSync, utimesSync } from "fs"
 import { tmpdir, homedir } from "os"
 import { join } from "path"
-import { ttsUrl } from "../lib/config.ts"
+import { ttsUrl, ttsAuth } from "../lib/config.ts"
+import { sessionToken } from "../lib/principal.ts"
 import { play, playerName } from "../lib/audio.ts"
 
 /**
@@ -89,6 +90,25 @@ async function playAudio(filePath: string, wait: boolean): Promise<void> {
 
 const TTS_URL = ttsUrl()
 
+/**
+ * Authorization for the TTS daemon. With `[tts].auth = "oauth"` the daemon
+ * expects the operator's madcat-web desktop session as a Bearer — the same
+ * token the menubar keeps and EEMS uses to pick the user's database.
+ * `MADCAT_TTS_TOKEN` overrides for headless hosts that have no menubar.
+ * Returns an error string (not a throw) so callers surface it like any other
+ * TTS failure.
+ */
+function ttsAuthHeader(): { header?: string; error?: string } {
+  if (ttsAuth() !== "oauth") return {}
+  const override = process.env.MADCAT_TTS_TOKEN
+  if (override) return { header: `Bearer ${override}` }
+  try {
+    return { header: `Bearer ${sessionToken("tts")}` }
+  } catch (e: any) {
+    return { error: e?.message || String(e) }
+  }
+}
+
 async function ttsRequest(
   method: string,
   path: string,
@@ -102,6 +122,10 @@ async function ttsRequest(
     headers["Content-Type"] = "application/json"
     reqBody = JSON.stringify(body)
   }
+
+  const auth = ttsAuthHeader()
+  if (auth.error) return { error: auth.error }
+  if (auth.header) headers["Authorization"] = auth.header
 
   try {
     const res = await fetch(url, { method, headers, body: reqBody })

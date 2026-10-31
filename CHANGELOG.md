@@ -2,6 +2,19 @@
 
 All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/opencode-plugin`) are documented here.
 
+## 2.6.1 — TTS requests carry the menubar session
+
+### Fixed
+
+- `tts_*` tools returned `HTTP 401: unauthorized` against a daemon configured
+  with `[tts].auth = "oauth"`: `ttsRequest` sent no credentials. It now attaches
+  the signed-in principal's madcat-web desktop session as `Authorization: Bearer`
+  — the same token EEMS uses to select the user's database — re-read per request
+  so a re-sign-in takes effect without a restart. `MADCAT_TTS_TOKEN` overrides
+  for headless hosts without a menubar; `MADCAT_TTS_AUTH` overrides the config
+  key. With no valid session the tool reports the sign-in instruction instead of
+  a bare 401. `auth = "none"` (default) is unchanged.
+
 ## 2.6.0 — public on npmjs as `@madcat-os/opencode-madcat`
 
 ### Changed

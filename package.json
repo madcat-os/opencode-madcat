@@ -1,6 +1,6 @@
 {
   "name": "@madcat-os/opencode-madcat",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -11,7 +11,13 @@
     "CHANGELOG.md"
   ],
   "description": "OpenCode plugin for the MADCAT operating system — memory (EEMS), TTS, messaging, mesh orchestration, code index, persona hooks.",
-  "keywords": ["opencode", "opencode-plugin", "madcat", "eems", "pgvector"],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "madcat",
+    "eems",
+    "pgvector"
+  ],
   "homepage": "https://github.com/madcat-os/opencode-madcat#readme",
   "repository": {
     "type": "git",

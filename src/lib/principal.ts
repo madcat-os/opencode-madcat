@@ -74,22 +74,32 @@ interface SessionFile {
   name?: string | null
 }
 
-function readSession(web: string): { token: string; file: SessionFile; path: string } {
+function readSession(web: string, scope = "eems"): { token: string; file: SessionFile; path: string } {
   const path = sessionPath(web)
   if (!existsSync(path)) {
-    throw new Error(`eems: not signed in — no menubar session at ${path}. Sign in with the Madcat menubar.`)
+    throw new Error(`${scope}: not signed in — no menubar session at ${path}. Sign in with the Madcat menubar.`)
   }
   let file: SessionFile
   try {
     file = JSON.parse(readFileSync(path, "utf8"))
   } catch (e) {
-    throw new Error(`eems: menubar session unreadable at ${path}: ${(e as Error).message}`)
+    throw new Error(`${scope}: menubar session unreadable at ${path}: ${(e as Error).message}`)
   }
-  if (!file.access_token) throw new Error(`eems: menubar session at ${path} has no access_token`)
+  if (!file.access_token) throw new Error(`${scope}: menubar session at ${path} has no access_token`)
   if (file.expires_at <= Math.floor(Date.now() / 1000)) {
-    throw new Error(`eems: menubar session expired at ${new Date(file.expires_at * 1000).toISOString()}. Sign in again.`)
+    throw new Error(`${scope}: menubar session expired at ${new Date(file.expires_at * 1000).toISOString()}. Sign in again.`)
   }
   return { token: file.access_token, file, path }
+}
+
+/**
+ * The signed-in principal's madcat-web bearer token, for services that accept
+ * the same desktop session (e.g. madcat-tts with `[tts].auth = "oauth"`).
+ * Re-read on every call so a re-sign-in is picked up without a restart.
+ * Throws with a sign-in instruction when no valid session exists.
+ */
+export function sessionToken(scope: string, web: string = webUrl()): string {
+  return readSession(web, scope).token
 }
 
 /** Postgres identifier for a db_name: lowercase, `-` → `_`, [a-z0-9_]{1,40}. */

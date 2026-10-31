@@ -106,6 +106,17 @@ export function ttsUrl(): string {
   return process.env.MADCAT_TTS_URL ?? get("tts.url") ?? "http://sin:14099"
 }
 
+/**
+ * `[tts].auth` — how to authenticate against the TTS daemon.
+ * `"oauth"`: send the signed-in principal's madcat-web token as a Bearer
+ * (`MADCAT_TTS_TOKEN` overrides, for headless hosts without a menubar).
+ * `"none"` (default): no Authorization header.
+ */
+export function ttsAuth(): "oauth" | "none" {
+  const v = process.env.MADCAT_TTS_AUTH ?? get("tts.auth") ?? "none"
+  return v === "oauth" ? "oauth" : "none"
+}
+
 /** Tensors API URL — ComfyUI image generation gateway. Env → config → default. */
 export function tensorsUrl(): string {
   return process.env.TENSORS_API_URL ?? get("tensors.url") ?? "http://localhost:51200"

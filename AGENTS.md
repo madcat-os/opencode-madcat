@@ -165,7 +165,7 @@ bun -e 'const m = await import("./src/index.ts"); console.log(typeof m.default)'
 
 The plugin reads `~/.config/madcat/config.toml` for:
 - `[mesh.*]` — opencode serve URLs and credentials for cross-host operations
-- `[tts]` — TTS daemon URL, default voice
+- `[tts]` — TTS daemon `url`; `auth = "oauth"` sends the menubar session as a Bearer (`MADCAT_TTS_TOKEN` overrides for headless hosts)
 - `[embedding]` — `provider` (ollama|openai), `url`, `model`, `dimensions`, `api_key`
 - `[database]` — `dsn` (base Postgres DSN), optional `user_dsn` template with `{db_name}`
 - `[web].url` / `[mcp].oauth_issuer` — madcat-web origin for `/api/me` (default `https://madcat-os.com`)
