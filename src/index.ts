@@ -56,7 +56,6 @@ import * as ingest from "./tools/ingest"
 import * as screenshot from "./tools/screenshot"
 import * as image from "./tools/image"
 import * as latex from "./tools/latex"
-import * as legacyMemory from "./tools/legacy-memory"
 import * as memory from "./tools/memory"
 import * as indexer from "./tools/indexer"
 
@@ -118,7 +117,6 @@ export default Plugin.define({
       ...ns("code", screenshot),
       ...ns("image", image),
       ...ns("latex", latex),
-      ...ns("legacy_memory", legacyMemory),
       ...ns("memory", memory),
       ...ns("index", indexer),
       ...ns("tts", tts),

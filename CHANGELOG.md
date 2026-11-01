@@ -2,6 +2,17 @@
 
 All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/opencode-plugin`) are documented here.
 
+## 2.9.0 — legacy memory tools removed
+
+### Removed
+
+- `legacy_memory_recall`, `legacy_memory_search`, `legacy_memory_list` and
+  `legacy_memory_core` (`src/tools/legacy-memory.ts`). They shelled out to
+  `madcat memory … --json`, a subcommand the `madcat` CLI no longer has (5.x
+  ships only `mcp` and `claude`), so every call failed with a bare "Command
+  failed". EEMS (`memory_*`) is the memory store. Any `[mcp].disabled_tools`
+  entry naming them is now a no-op.
+
 ## 2.8.0 — job search removed; releases cut from tags
 
 ### Removed
