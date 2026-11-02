@@ -1,14 +1,14 @@
 /**
- * EEMS store/index resolution for tool calls.
+ * EEMS store resolution for tool calls.
  *
- * Pure TypeScript — `MemoryStore` and `CodeIndex` live in eems.ts and talk
+ * Pure TypeScript — `MemoryStore` lives in eems.ts and talks
  * to Postgres with the `postgres` package. No NAPI binaries.
  *
  * Which database a call lands in, in precedence order:
  *
  * 1. Dual-DSN mode (`EEMS_DSN_CORE` + `EEMS_DSN_DOUBLE` set): each agent
- *    role gets a store on its own pre-configured DSN. Index and mirror use
- *    the core DSN.
+ *    role gets a store on its own pre-configured DSN. The mirror uses the
+ *    core DSN.
  * 2. Signed-in principal (madcat menubar session file exists): `/api/me` →
  *    `db_url`, the user's own role and database. See principal.ts. A session
  *    that exists but is expired, rejected or unreachable throws with a
@@ -17,14 +17,14 @@
  *    `[database].dsn` — one shared store for whoever runs the serve.
  */
 
-import { MemoryStore, CodeIndex } from "./eems.ts"
+import { MemoryStore } from "./eems.ts"
 import { Embedder } from "./embed.ts"
 import { hasDualDsn, dsnForAgent } from "./user-resolver.ts"
 import { hasSession, resolvePrincipal } from "./principal.ts"
 import { eemsPgDsn } from "./config.ts"
 import type { ToolContext } from "./identity.ts"
 
-export type { MemoryStore, CodeIndex } from "./eems.ts"
+export type { MemoryStore } from "./eems.ts"
 
 let _embedder: Embedder | null = null
 function embedder(): Embedder {
@@ -32,7 +32,6 @@ function embedder(): Embedder {
 }
 
 const stores = new Map<string, MemoryStore>()
-const indexes = new Map<string, CodeIndex>()
 
 function storeFor(dsn: string): MemoryStore {
   let s = stores.get(dsn)
@@ -43,16 +42,6 @@ function storeFor(dsn: string): MemoryStore {
   return s
 }
 
-function indexFor(dsn: string): CodeIndex {
-  let i = indexes.get(dsn)
-  if (!i) {
-    i = new CodeIndex(dsn, embedder())
-    indexes.set(dsn, i)
-  }
-  return i
-}
-
-/** Which of the three routes applies on this host right now. */
 export type EemsMode = "dual-dsn" | "principal" | "shared"
 
 export function eemsMode(): EemsMode {
@@ -95,11 +84,6 @@ export async function memoryStoreForContext(context?: ToolContext): Promise<Memo
     return storeFor(dsnForAgent(role)!)
   }
   return memoryStore()
-}
-
-/** CodeIndex — same database as the default MemoryStore. */
-export async function codeIndex(): Promise<CodeIndex> {
-  return indexFor(await defaultDsn())
 }
 
 /**

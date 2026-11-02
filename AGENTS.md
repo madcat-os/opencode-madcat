@@ -2,7 +2,7 @@
 
 ## What this is
 
-OpenCode plugin for the MADCAT operating system. Runs inside opencode's Bun runtime — TypeScript executed natively, no compilation step. Registers ~120 custom tools (memory, TTS, messaging, mesh orchestration, infra, etc.), persona hooks, doctrine mirroring, and event handlers.
+OpenCode plugin for the MADCAT operating system. Runs inside opencode's Bun runtime — TypeScript executed natively, no compilation step. Registers custom tools (memory, messaging, mesh orchestration, infra, etc.), persona hooks, doctrine mirroring, and event handlers.
 
 Published to npmjs as `@madcat-os/opencode-madcat` from GitHub Actions. Consumed by opencode instances on fuji, sin, and junkpile via the `"plugin"` array in `opencode.jsonc`.
 
@@ -20,16 +20,12 @@ Published to npmjs as `@madcat-os/opencode-madcat` from GitHub Actions. Consumed
 src/
   index.ts          # Plugin entry — exports default Plugin, registers all tools + hooks
   lib/              # Shared libraries
-    native.ts       # EEMS store/index resolution: dual-DSN → signed-in principal
-    eems.ts         # MemoryStore + CodeIndex — Postgres + pgvector, pure TS
+    native.ts       # EEMS store resolution: dual-DSN → signed-in principal
+    eems.ts         # MemoryStore — Postgres + pgvector, pure TS
     embed.ts        # Embedding client (ollama /api/embed or openai /v1/embeddings)
-    chunk.ts        # Language-aware chunking (port of madcat-memory chunk.rs)
-    walk.ts         # Gitignore-aware file walker (git ls-files, SKIP_DIRS, ext filters)
     principal.ts    # Menubar session → /api/me → user's instanced DSN
-    sql/eems_init.sql # Idempotent EEMS schema (memories, edges, chunks_*, file_state)
-    audio.ts        # Local playback: spawns afplay / pw-play / paplay / aplay, tracks procs
-    silicon.ts      # Code → PNG: shiki tokens → SVG window frame → resvg-wasm
-    config.ts       # Reads ~/.config/madcat/config.toml — mesh hosts, TTS, embedding, DB, web URL
+    sql/eems_init.sql # Idempotent EEMS schema (memories, edges)
+    config.ts       # Reads ~/.config/madcat/config.toml — mesh hosts, embedding, DB, web URL
     db.ts           # Postgres connection (porsager/postgres) — PRIME locks, dual-DSN core access
     sdk.ts          # @opencode/client factory — talks to local/remote V2 opencode serves
     user-resolver.ts # Dual-DSN env var resolution (EEMS_DSN_CORE / EEMS_DSN_DOUBLE)
@@ -41,13 +37,10 @@ src/
     memory.ts       # EEMS memory (recall, store, list, get, forget, classify, link, graph)
     sessions.ts     # Session list, status, get, diff, children, search, ingest
     whoami.ts       # Identity bootstrap — session, host, persona, operator, guidance
-    tts.ts          # Text-to-speech (speak, switch_voice, list, active, health)
     prime.ts        # PRIME session lock (claim, release, status)
     messages.ts     # Cross-session messaging (prompt, prompt_async, read)
     control.ts      # Session lifecycle (create, remove, abort, fork, revert, etc.)
-    ...             # 20+ more tool files
-  assets/
-    Hack-Regular.ttf # Monospace font embedded in code screenshots
+    ...             # remaining tool files
   hooks/
     persona.ts      # System prompt injection — resolves cart from file/DB, injects identity
     doctrine.ts     # Injects operational doctrine into system prompt
@@ -58,8 +51,7 @@ src/
 ## EEMS (memory + index)
 
 Pure TypeScript on the `postgres` package — no binaries. `src/lib/eems.ts` holds `MemoryStore`
-(store/recall/get/forget/classify/listSubjects/link/graph) and `CodeIndex`
-(indexCode/indexDocs/search/clear/status); both are async. Hybrid recall is pgvector cosine +
+(store/recall/get/forget/classify/listSubjects/link/graph); everything is async. Hybrid recall is pgvector cosine +
 tsvector `ts_rank`, RRF-fused in SQL. Embeddings come from the `[embedding]` endpoint.
 
 Which database a call hits (`src/lib/native.ts`):
@@ -78,25 +70,13 @@ Which database a call hits (`src/lib/native.ts`):
    `whoami_info.eems.mode` is `"shared"` with the role it connects as.
 
 A session file that exists but is expired, rejected (401), or whose madcat-web/database is
-unreachable makes `memory_*` / `index_*` / the doctrine mirror throw with a sign-in
+unreachable makes `memory_*` / the doctrine mirror throw with a sign-in
 instruction — it is never silently downgraded to the shared store. Plugin load is unaffected;
 `whoami_info.eems` reports the state.
 
-## Audio playback
+## No native binaries
 
-`src/lib/audio.ts` spawns the platform player per clip — `afplay` on macOS, the first of
-`pw-play` / `paplay` / `aplay` on Linux — and tracks every process, so `stopAll()` / `isPlaying()`
-work and `tts_speak` observes real completion (`proc.exited`) before clearing the ear mute flag.
-No player on PATH → `tts_speak` reports `backend: "none"` and playback throws.
-
-## Code screenshots
-
-`src/lib/silicon.ts` highlights with shiki (TextMate grammars, 65 bundled VS Code themes), lays
-the window frame out as SVG with the same geometry the Rust renderer used, and rasterises through
-`@resvg/resvg-wasm` with `src/assets/Hack-Regular.ttf`. Pure JS + wasm, works on every platform.
-Old syntect theme names (`base16-ocean.dark`, `InspiredGitHub`, …) map to the nearest shiki theme.
-
-No NAPI binaries ship anymore; there is nothing platform-specific in `src/tools/`.
+Nothing platform-specific ships in `src/`; the package is TypeScript only.
 
 ## Key dependencies
 
@@ -106,10 +86,6 @@ No NAPI binaries ship anymore; there is nothing platform-specific in `src/tools/
 | `@opencode/client` | V2 opencode HTTP client — `OpenCode.make()` for mesh hosts |
 | `postgres` | Pure JS Postgres client — PRIME locks, dual-DSN core schema |
 | `smol-toml` | TOML parser — reads config.toml and cart files |
-| `shiki` | Syntax highlighting for `code_screenshot` |
-| `@resvg/resvg-wasm` | SVG → PNG rasteriser for `code_screenshot` |
-| `@firecrawl/pdf-inspector` | PDF text extraction for ingest tools |
-| `@kreuzberg/html-to-markdown-node` | HTML → markdown for ingest tools |
 
 ## Development workflow
 
@@ -163,14 +139,13 @@ bun -e 'const m = await import("./src/index.ts"); console.log(typeof m.default)'
 1. **Never `npm install` in `~/.config/opencode/`** — creates `node_modules/` that shadows the cache. Use `opencode plugin` CLI only.
 2. **Never leave `.opencode/` in the serve's working directory** (e.g. `/home/madcat/.opencode/`) — project-level config merges in and can inject bogus plugins.
 3. **Always type-check before publishing** — syntax errors (even a missing comma) silently kill the entire plugin with zero log output from the serve.
-4. **Memory tools follow the menubar sign-in** — with a `session-<host>.json` present, every `memory_*` / `index_*` call goes to that user's own database and throws if the session is expired or rejected (no fallback). Without one, the global `[database].dsn` is used. Check `whoami_info.eems`.
+4. **Memory tools follow the menubar sign-in** — with a `session-<host>.json` present, every `memory_*` call goes to that user's own database and throws if the session is expired or rejected (no fallback). Without one, the global `[database].dsn` is used. Check `whoami_info.eems`.
 5. **Plugin tools are NOT bash commands** — agents should call them as MCP tools. If an agent runs `whoami_info` in bash, the plugin isn't loaded.
 
 ## Configuration
 
 The plugin reads `~/.config/madcat/config.toml` for:
 - `[mesh.*]` — opencode serve URLs and credentials for cross-host operations
-- `[tts]` — TTS daemon `url`; `auth = "oauth"` sends the menubar session as a Bearer (`MADCAT_TTS_TOKEN` overrides for headless hosts)
 - `[embedding]` — `provider` (ollama|openai), `url`, `model`, `dimensions`, `api_key`
 - `[database]` — `dsn` (base Postgres DSN), optional `user_dsn` template with `{db_name}`
 - `[web].url` / `[mcp].oauth_issuer` — madcat-web origin for `/api/me` (default `https://madcat-os.com`)

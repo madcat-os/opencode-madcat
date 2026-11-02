@@ -1,13 +1,12 @@
 /**
  * prime — PRIME session lock management (global, Postgres-backed).
  *
- * The PRIME lock determines which session receives inbound Signal messages
- * (via signal-bridge) and holds exclusive TTS rights. Only one session
- * mesh-wide should be PRIME.
+ * The PRIME lock marks the one session mesh-wide that owns the operator
+ * channel. Only one session should be PRIME.
  *
  * Stored in the `locks` table in EEMS Postgres — shared across all hosts.
  * The lock record includes session ID, host, agent, persona, mesh URL,
- * and hardware info so the signal-bridge can route to the correct host.
+ * and hardware info so other consumers can route to the correct host.
  */
 
 import { tool } from "../lib/tool"
@@ -31,7 +30,7 @@ function selfMesh(): { name: string; url: string } {
   return { name: hostname(), url: "" }
 }
 
-/** Read active cart tag from TTS state. */
+/** Read active cart tag from the persona state file. */
 function activeCartTag(): string | null {
   try {
     const { readFileSync } = require("node:fs")
@@ -49,7 +48,7 @@ function activeCartTag(): string | null {
 export const claim = tool({
   description:
     "Claim the PRIME session lock. Makes the current session (or a specified session) the exclusive " +
-    "recipient of inbound Signal messages and TTS rights. Overwrites any existing lock.",
+    "owner of the operator channel. Overwrites any existing lock.",
   args: {
     session_id: tool.schema
       .string()
@@ -88,8 +87,7 @@ export const claim = tool({
 
 export const release = tool({
   description:
-    "Release the PRIME session lock. Removes the lock so no session is PRIME. " +
-    "Incoming Signal messages will create a new session until someone claims PRIME again.",
+    "Release the PRIME session lock. Removes the lock so no session is PRIME.",
   args: {},
   async execute() {
     const previous = await releaseLock(LOCK_NAME)

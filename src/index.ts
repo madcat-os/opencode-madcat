@@ -21,8 +21,6 @@ import { persona } from "./hooks/persona"
 import { allDoctrines } from "./lib/doctrines"
 import { mirrorDoctrines } from "./lib/mirror"
 import { initNative } from "./lib/native"
-import { initAudio } from "./lib/audio"
-import { initSilicon } from "./lib/silicon"
 
 // ── Tool modules (pure TS — always available) ───────────────
 import * as auth from "./tools/auth"
@@ -36,15 +34,11 @@ import * as sessions from "./tools/sessions"
 import * as smoketest from "./tools/smoketest"
 import * as tools from "./tools/tools"
 import { bindToolLister } from "./tools/tools"
-import * as tts from "./tools/tts"
 import * as whoami from "./tools/whoami"
 
 import * as prime from "./tools/prime"
-import * as ingest from "./tools/ingest"
-import * as screenshot from "./tools/screenshot"
 import * as image from "./tools/image"
 import * as memory from "./tools/memory"
-import * as indexer from "./tools/indexer"
 
 /** A V1-shaped tool definition carries `description` + `execute` (+ `args`). */
 function isToolDef(v: unknown): v is ToolDefinition {
@@ -80,8 +74,8 @@ export default Plugin.define({
     const personaHandler = persona(ctx)
     const doctrineHandler = doctrine()
 
-    // Warm EEMS (resolves the signed-in principal), the audio player probe and shiki/resvg.
-    await Promise.all([initNative(), initAudio(), initSilicon()])
+    // Warm EEMS (resolves the signed-in principal).
+    await initNative()
 
     // One-shot fs → EEMS mirror at plugin init. Filesystem stays canonical;
     // this populates `doctrine.<slug>` subjects in the principal's EEMS for
@@ -98,11 +92,8 @@ export default Plugin.define({
 
     // ── Register all tools ────────────────────────────────────
     const defs: Record<string, ToolDefinition> = {
-      ...ns("code", screenshot),
       ...ns("image", image),
       ...ns("memory", memory),
-      ...ns("index", indexer),
-      ...ns("tts", tts),
       ...ns("auth", auth),
       ...ns("control", control),
       ...ns("infra", infra),
@@ -115,7 +106,6 @@ export default Plugin.define({
       ...ns("smoketest", smoketest),
       ...ns("tools", tools),
       ...ns("whoami", whoami),
-      ...ns("ingest", ingest),
     }
 
     const directory = ctx.location.directory

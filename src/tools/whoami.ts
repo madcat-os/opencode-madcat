@@ -3,7 +3,7 @@
  *
  * Returns: session context, mode (foreground/background), persona from
  * the active cart, mesh topology, host hardware, available tools for
- * the current agent, comms rules, and memory/index guidance.
+ * the current agent, comms rules, and memory guidance.
  *
  * Everything the agent needs to know comes from here — no inference,
  * no guessing, no duplicate prompts.
@@ -36,7 +36,7 @@ function loadCart(tag: string): Record<string, any> | null {
   }
 }
 
-/** Read TTS state to get active cart tag (single-tenant fallback). */
+/** Read the persona state file to get the active cart tag (single-tenant fallback). */
 function globalCartTag(): string | null {
   try {
     const state = parse(readFileSync(TTS_STATE, "utf-8"))
@@ -104,7 +104,7 @@ function hardware(): { cpu: string; cores: number; ram_gb: number } {
   }
 }
 
-/** Which EEMS database this host's memory/index calls land in, and as whom. */
+/** Which EEMS database this host's memory calls land in, and as whom. */
 function eemsBlock(
   route: ReturnType<typeof eemsMode>,
   status: Awaited<ReturnType<typeof principalStatus>> | null,
@@ -143,7 +143,7 @@ function eemsBlock(
   return {
     mode: "unavailable",
     reason: status?.reason ?? "unknown",
-    fix: "A menubar session exists but did not resolve. Sign in again with the Madcat menubar; memory_* and index_* tools will not fall back to the shared store.",
+    fix: "A menubar session exists but did not resolve. Sign in again with the Madcat menubar; memory_* tools will not fall back to the shared store.",
   }
 }
 
@@ -151,7 +151,7 @@ export const info = tool({
   description:
     "Identify the current agent session — session ID, host, agent, model, persona, " +
     "mode (foreground/background), mesh topology, available tools, comms rules, and " +
-    "memory/index guidance. Run at session start. This is the single source of truth.",
+    "memory guidance. Run at session start. This is the single source of truth.",
   args: {},
   async execute(_args: {}, context: ToolContext) {
     const now = new Date()
@@ -189,12 +189,10 @@ export const info = tool({
       mode === "foreground"
         ? {
             persona: "active — follow cart persona fully",
-            tts: "enabled — speak for summaries and significant updates, not every reply",
             style: "full responses, markdown OK for terminal agents",
           }
         : {
             persona: "inactive — terse, technical, no character voice",
-            tts: "disabled — no TTS, no voice",
             style: "structured text only, concise",
             reporting:
               "when reporting results or blockers back to caller, switch to persona voice for the summary",
@@ -245,9 +243,6 @@ export const info = tool({
             "memory_store(subject, content) to persist decisions. " +
             "memory_list() to discover categories. memory_get(ids) for full entries. " +
             "Use on demand — subject-scoped, tight limits.",
-          index:
-            "index_search(query) for semantic search across indexed code and docs. " +
-            "Search before reading files.",
         },
       },
       null,

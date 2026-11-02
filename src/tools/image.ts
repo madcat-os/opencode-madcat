@@ -3,7 +3,7 @@
  *
  * Calls POST /api/comfyui/generate on the tensors host (config.toml [tensors]),
  * polls for the result, and downloads the PNG to local /tmp. Runs on the GPU
- * via ComfyUI — no model loading in-process, so it coexists with TTS.
+ * via ComfyUI — no model loading in-process.
  */
 
 import { tool } from "../lib/tool"
@@ -30,7 +30,6 @@ export const generate = tool({
     "Generate an image from a text prompt via Stable Diffusion (ComfyUI on the GPU). " +
     "Returns the local file path of the rendered PNG. " +
     "Runs on RTX 2000 Ada — SDXL and SD1.5 checkpoints available. " +
-    "Coexists with TTS (no in-process model loading). " +
     "List models with image_models.",
   args: {
     prompt: tool.schema.string().describe("Positive prompt — what to generate"),

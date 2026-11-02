@@ -117,7 +117,7 @@ function readSession(web: string, scope = "eems"): { token: string; file: Sessio
 
 /**
  * The signed-in principal's madcat-web bearer token, for services that accept
- * the same desktop session (e.g. madcat-tts with `[tts].auth = "oauth"`).
+ * the same desktop session.
  * Re-read on every call so a re-sign-in is picked up without a restart.
  * Throws with a sign-in instruction when no valid session exists.
  */

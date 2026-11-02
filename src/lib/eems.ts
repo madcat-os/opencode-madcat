@@ -1,7 +1,7 @@
 /**
- * EEMS — Postgres + pgvector memory store and code/docs index, in TypeScript.
+ * EEMS — Postgres + pgvector memory store, in TypeScript.
  *
- * Port of madcat-memory's pg.rs + pg_index.rs. The SQL is lifted verbatim:
+ * Port of madcat-memory's pg.rs. The SQL is lifted verbatim:
  * hybrid recall is pgvector cosine (`<=>`) + tsvector `ts_rank`, fused with
  * Reciprocal Rank Fusion (k = 60) in a single round trip. Embeddings come
  * from the remote endpoint in `[embedding]` (see embed.ts).
@@ -13,11 +13,9 @@
 import postgres from "postgres"
 import { createHash, randomBytes } from "node:crypto"
 import { readFileSync } from "node:fs"
-import { join, dirname, resolve } from "node:path"
+import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Embedder, vectorLiteral } from "./embed.ts"
-import { chunk as chunkFile, configFor } from "./chunk.ts"
-import { walk, detectLanguage, type ChunkType } from "./walk.ts"
 
 type Sql = ReturnType<typeof postgres>
 
@@ -87,39 +85,6 @@ export interface SubjectCount {
   count: number
 }
 
-export interface Chunk {
-  id: string
-  filePath: string
-  repo: string | null
-  lineStart: number
-  lineEnd: number
-  language: string | null
-  content: string
-  contentHash: string
-  indexedAt: number
-}
-
-export interface SearchHit {
-  chunk: Chunk
-  score: number
-}
-
-export interface IndexResult {
-  filesScanned: number
-  filesIndexed: number
-  filesSkipped: number
-  chunksCreated: number
-  elapsedMs: number
-}
-
-export interface IndexStats {
-  codeChunks: number
-  docChunks: number
-  codeFiles: number
-  docFiles: number
-  repos: string[]
-}
-
 // ── Helpers ─────────────────────────────────────────────────
 
 export function contentHash(s: string): string {
@@ -186,20 +151,6 @@ function rowToMemory(r: Record<string, any>): Memory {
   }
 }
 
-function rowToChunk(r: Record<string, any>, ct: ChunkType): Chunk {
-  return {
-    id: r.id,
-    filePath: r.file_path,
-    repo: r.repo ?? null,
-    lineStart: Number(r.line_start),
-    lineEnd: Number(r.line_end),
-    language: ct === "code" ? (r.language ?? null) : null,
-    content: r.content,
-    contentHash: r.content_hash,
-    indexedAt: Number(r.indexed_at),
-  }
-}
-
 // ── Static SQL (verbatim from the Rust crate) ───────────────
 
 const RECALL_SQL = `
@@ -258,57 +209,11 @@ const RECALL_SQL = `
     LIMIT $6
 `
 
-function searchSql(table: "chunks_code" | "chunks_docs"): string {
-  const langCol = table === "chunks_code" ? "c.language," : ""
-  return `
-    WITH params AS (
-        SELECT $1::vector AS qvec,
-               $2::text   AS qtext,
-               $3::int    AS fetch_n
-    ),
-    vec_ranked AS (
-        SELECT c.id,
-               row_number() OVER (ORDER BY c.embedding <=> p.qvec ASC) AS rnk
-        FROM ${table} c, params p
-        WHERE c.embedding IS NOT NULL
-        ORDER BY c.embedding <=> p.qvec ASC
-        LIMIT (SELECT fetch_n FROM params)
-    ),
-    fts_ranked AS (
-        SELECT c.id,
-               row_number() OVER (
-                   ORDER BY ts_rank(c.content_tsv, websearch_to_tsquery('english', p.qtext)) DESC
-               ) AS rnk
-        FROM ${table} c, params p
-        WHERE c.content_tsv @@ websearch_to_tsquery('english', p.qtext)
-        ORDER BY ts_rank(c.content_tsv, websearch_to_tsquery('english', p.qtext)) DESC
-        LIMIT (SELECT fetch_n FROM params)
-    ),
-    fused AS (
-        SELECT id, SUM(score)::double precision AS score FROM (
-            SELECT id, (1.0 / (60.0 + rnk))::double precision AS score FROM vec_ranked
-            UNION ALL
-            SELECT id, (1.0 / (60.0 + rnk))::double precision AS score FROM fts_ranked
-        ) u
-        GROUP BY id
-    )
-    SELECT c.id, c.file_path, c.repo, c.line_start, c.line_end, ${langCol}
-           c.content, c.content_hash, c.indexed_at, fused.score
-    FROM fused
-    JOIN ${table} c ON c.id = fused.id
-    ORDER BY fused.score DESC
-    LIMIT $4
-`
-}
-
-const SEARCH_CODE_SQL = searchSql("chunks_code")
-const SEARCH_DOCS_SQL = searchSql("chunks_docs")
-
 // ── Shared connection registry ──────────────────────────────
 
 const connections = new Map<string, { sql: Sql; ready: Promise<void> }>()
 
-/** One pool + one migration per DSN, shared by MemoryStore and CodeIndex. */
+/** One pool + one migration per DSN. */
 function pool(dsn: string): { sql: Sql; ready: Promise<void> } {
   let c = connections.get(dsn)
   if (!c) {
@@ -460,162 +365,5 @@ export class MemoryStore {
       weight: Number(r.weight),
       createdAt: Number(r.created_at),
     }))
-  }
-}
-
-// ── CodeIndex ───────────────────────────────────────────────
-
-export class CodeIndex {
-  private readonly sql: Sql
-  private readonly ready: Promise<void>
-  private readonly embed: Embedder
-
-  constructor(readonly dsn: string, embed: Embedder = new Embedder()) {
-    const c = pool(dsn)
-    this.sql = c.sql
-    this.ready = c.ready
-    this.embed = embed
-  }
-
-  open(): Promise<void> {
-    return this.ready
-  }
-
-  indexCode(root: string, repo?: string): Promise<IndexResult> {
-    return this.indexInner(root, "code", repo)
-  }
-
-  indexDocs(root: string, repo?: string): Promise<IndexResult> {
-    return this.indexInner(root, "docs", repo)
-  }
-
-  /** typeFilter: "code" | "docs" | undefined for both. */
-  async search(query: string, typeFilter?: string, limit = 20): Promise<SearchHit[]> {
-    await this.ready
-    const types: ChunkType[] = typeFilter === "code" ? ["code"] : typeFilter === "docs" ? ["docs"] : ["code", "docs"]
-    const fetch = Math.max(limit * 3, 30)
-    const qv = vectorLiteral(await this.embed.embedOne(query))
-
-    const hits: SearchHit[] = []
-    for (const ct of types) {
-      const rows = await this.sql.unsafe(ct === "code" ? SEARCH_CODE_SQL : SEARCH_DOCS_SQL, [qv, query, fetch, limit])
-      for (const r of rows) hits.push({ chunk: rowToChunk(r, ct), score: Number(r.score) })
-    }
-    hits.sort((a, b) => b.score - a.score)
-    return hits.slice(0, limit)
-  }
-
-  async clear(typeFilter?: string, repo?: string): Promise<void> {
-    await this.ready
-    const types: ChunkType[] = typeFilter === "code" ? ["code"] : typeFilter === "docs" ? ["docs"] : ["code", "docs"]
-    for (const ct of types) {
-      if (repo !== undefined) {
-        const paths =
-          ct === "code"
-            ? await this.sql`DELETE FROM chunks_code WHERE repo = ${repo} RETURNING file_path`
-            : await this.sql`DELETE FROM chunks_docs WHERE repo = ${repo} RETURNING file_path`
-        const list = [...new Set(paths.map((p) => p.file_path as string))]
-        if (list.length) {
-          await this.sql`DELETE FROM file_state WHERE chunk_type = ${ct} AND file_path = ANY(${list})`
-        }
-      } else {
-        if (ct === "code") await this.sql`DELETE FROM chunks_code`
-        else await this.sql`DELETE FROM chunks_docs`
-        await this.sql`DELETE FROM file_state WHERE chunk_type = ${ct}`
-      }
-    }
-  }
-
-  async status(): Promise<IndexStats> {
-    await this.ready
-    const [[cc], [dc], [cf], [df], repos] = await Promise.all([
-      this.sql`SELECT COUNT(*)::bigint AS n FROM chunks_code`,
-      this.sql`SELECT COUNT(*)::bigint AS n FROM chunks_docs`,
-      this.sql`SELECT COUNT(DISTINCT file_path)::bigint AS n FROM chunks_code`,
-      this.sql`SELECT COUNT(DISTINCT file_path)::bigint AS n FROM chunks_docs`,
-      this.sql`SELECT DISTINCT repo FROM chunks_code WHERE repo IS NOT NULL
-               UNION
-               SELECT DISTINCT repo FROM chunks_docs WHERE repo IS NOT NULL`,
-    ])
-    return {
-      codeChunks: Number(cc.n),
-      docChunks: Number(dc.n),
-      codeFiles: Number(cf.n),
-      docFiles: Number(df.n),
-      repos: repos.map((r) => r.repo as string).sort(),
-    }
-  }
-
-  // ── Internal ──────────────────────────────────────────────
-
-  private async indexInner(rootIn: string, ct: ChunkType, repo?: string): Promise<IndexResult> {
-    await this.ready
-    const start = Date.now()
-    const root = resolve(rootIn.replace(/^~(?=$|\/)/, process.env.HOME ?? "~"))
-    const files = walk(root, ct)
-    const config = configFor(ct)
-    const result: IndexResult = { filesScanned: files.length, filesIndexed: 0, filesSkipped: 0, chunksCreated: 0, elapsedMs: 0 }
-
-    const states = new Map<string, string>()
-    for (const r of await this.sql`SELECT file_path, content_hash FROM file_state WHERE chunk_type = ${ct}`) {
-      states.set(r.file_path, r.content_hash)
-    }
-
-    for (const rel of files) {
-      let content: string
-      try {
-        content = readFileSync(join(root, rel), "utf8")
-      } catch {
-        result.filesSkipped++
-        continue
-      }
-      const hash = contentHash(content)
-      if (states.get(rel) === hash) {
-        result.filesSkipped++
-        continue
-      }
-
-      if (ct === "code") await this.sql`DELETE FROM chunks_code WHERE file_path = ${rel}`
-      else await this.sql`DELETE FROM chunks_docs WHERE file_path = ${rel}`
-
-      const language = detectLanguage(rel)
-      const raws = chunkFile(content, rel, ct, config)
-      result.chunksCreated += raws.length
-      result.filesIndexed++
-
-      if (raws.length) {
-        const vecs = await this.embed.embed(raws.map((c) => c.content))
-        const now = Date.now()
-        const model = this.embed.modelId
-        for (let i = 0; i < raws.length; i++) {
-          const c = raws[i]
-          const id = ulid(now)
-          const v = vectorLiteral(vecs[i])
-          const h = contentHash(c.content)
-          if (ct === "code") {
-            await this.sql`
-              INSERT INTO chunks_code (id, file_path, repo, line_start, line_end, language,
-                                       content, content_hash, embedding, embedding_model, indexed_at)
-              VALUES (${id}, ${rel}, ${repo ?? null}, ${c.lineStart}, ${c.lineEnd}, ${language},
-                      ${c.content}, ${h}, ${v}::vector, ${model}, ${now})`
-          } else {
-            await this.sql`
-              INSERT INTO chunks_docs (id, file_path, repo, line_start, line_end,
-                                       content, content_hash, embedding, embedding_model, indexed_at)
-              VALUES (${id}, ${rel}, ${repo ?? null}, ${c.lineStart}, ${c.lineEnd},
-                      ${c.content}, ${h}, ${v}::vector, ${model}, ${now})`
-          }
-        }
-      }
-
-      await this.sql`
-        INSERT INTO file_state (file_path, chunk_type, content_hash, indexed_at)
-        VALUES (${rel}, ${ct}, ${hash}, ${Date.now()})
-        ON CONFLICT (file_path, chunk_type)
-        DO UPDATE SET content_hash = EXCLUDED.content_hash, indexed_at = EXCLUDED.indexed_at`
-    }
-
-    result.elapsedMs = Date.now() - start
-    return result
   }
 }

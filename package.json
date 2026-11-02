@@ -9,7 +9,7 @@
     "src/",
     "CHANGELOG.md"
   ],
-  "description": "OpenCode plugin for the MADCAT operating system — memory (EEMS), TTS, mesh orchestration, code index, persona hooks.",
+  "description": "OpenCode plugin for the MADCAT operating system — memory (EEMS), mesh orchestration, persona hooks.",
   "keywords": [
     "opencode",
     "opencode-plugin",
@@ -30,14 +30,10 @@
     "access": "public"
   },
   "dependencies": {
-    "@firecrawl/pdf-inspector": "^1.9.5",
-    "@kreuzberg/html-to-markdown-node": "^3.5.5",
     "@opencode/client": "^2.0.26",
     "@opencode/plugin": "^2.0.26",
-    "@resvg/resvg-wasm": "^2.6.2",
     "chrome-remote-interface": "^0.34.0",
     "postgres": "^3.4.9",
-    "shiki": "^4.5.0",
     "smol-toml": "^1.6.1",
     "zod": "^4.1.8"
   },

@@ -9,6 +9,17 @@ All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/openco
 - `latex_render`, `geo_*` (search, reverse), `brave_search`, `workspace_*`,
   `worktree_*`, `file_*` and `find_*` tool namespaces. `BRAVE_API_KEY` and
   `TECTONIC_PATH` are no longer read.
+- `tts_*` (speak, list, active, switch_voice, health) and the local playback
+  helper `src/lib/audio.ts`. `[tts]`, `MADCAT_TTS_URL`, `MADCAT_TTS_AUTH` and
+  `MADCAT_TTS_TOKEN` are no longer read. `~/.local/share/madcat/tts-state.toml`
+  is still read for the active persona cart.
+- `index_*` (code, docs, search, status, clear), `ingest_*` (html, pdf,
+  json_docs) and `code_screenshot`, with `CodeIndex` in `lib/eems.ts`,
+  `lib/chunk.ts`, `lib/walk.ts`, `lib/silicon.ts` and `src/assets/`. The
+  `chunks_code`, `chunks_docs` and `file_state` tables are no longer created;
+  existing ones are left in place. Drops the `shiki`, `@resvg/resvg-wasm`,
+  `@firecrawl/pdf-inspector` and `@kreuzberg/html-to-markdown-node`
+  dependencies.
 
 - `audio_*` (concat, convert, effects, mix, normalize, probe, silence, split,
   trim, waveform), `cart_*` (info, list, load), `icons_*` (categories,
@@ -18,8 +29,7 @@ All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/openco
   `skills/kindle` and `skills/newspaper` scripts the kindle tools drove.
   `[signal]` / `[whatsapp]` in `config.toml` are no longer read. Any
   `[mcp].disabled_tools` entry naming them is now a no-op.
-- `src/lib/audio.ts` (local playback) stays: `tts_speak` plays through it.
-  Persona cart resolution in `hooks/persona.ts` and `whoami_info` is
+- Persona cart resolution in `hooks/persona.ts` and `whoami_info` is
   unchanged; only the cart management tools are gone.
 
 ## 2.9.0 — legacy memory tools removed

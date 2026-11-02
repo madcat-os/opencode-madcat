@@ -25,8 +25,7 @@ serve, which is why `tsc` is mandatory.
   Pushes to `master` publish as dist-tag `latest`; pushes to `v2.0` (and any other branch listed in
   the workflow) publish as `next`, so `@latest` consumers are not upgraded. A version that already
   exists on the registry is skipped, so doc-only pushes do not fail.
-- No native binaries ship. `src/assets/Hack-Regular.ttf` and the `@resvg/resvg-wasm` wasm blob are
-  the only non-TypeScript artifacts; the wasm is resolved through the package's export map.
+- No native binaries ship; `src/lib/sql/eems_init.sql` is the only non-TypeScript artifact.
 - `.opencode/opencode.json` points `plugin` at a local checkout path for in-repo development on the
   linux dev host. It is not consumed by published installs.
 
@@ -52,7 +51,7 @@ The plugin is V2 (`@opencode/plugin`) but every tool module is written in the V1
 Two near-identical `ToolContext` types exist (`src/lib/tool.ts` and `src/lib/identity.ts`). They
 are structurally compatible; tools that talk to the mesh import the `identity.ts` one.
 
-**EEMS modules** (`tools/memory.ts`, `tools/indexer.ts`) are pure TypeScript and statically
+**EEMS module** (`tools/memory.ts`) is pure TypeScript and statically
 imported. `lib/native.ts` resolves the store lazily and never throws at module init; a missing
 sign-in surfaces from the first tool call and from `whoami_info`, not from plugin load.
 
@@ -95,6 +94,6 @@ EEMS as `doctrine.<slug>` at plugin init; the filesystem remains canonical.
   or a missing instanced database → memory and index tools throw; there is no fallback to the
   shared base DB. `lib/db.ts` is a separate pure-JS Postgres connection used for PRIME locks and
   core-schema config.
-- `lib/eems.ts` keeps one `postgres` pool per DSN shared by `MemoryStore` and `CodeIndex`, and
+- `lib/eems.ts` keeps one `postgres` pool per DSN for `MemoryStore`, and
   runs `src/lib/sql/eems_init.sql` (idempotent) once per pool. pgvector values are bound as
   `'[f,f,...]'::vector` text; jsonb via `sql.json()` (a plain string binds as a JSON string).
