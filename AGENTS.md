@@ -41,14 +41,11 @@ src/
     memory.ts       # EEMS memory (recall, store, list, get, forget, classify, link, graph)
     sessions.ts     # Session list, status, get, diff, children, search, ingest
     whoami.ts       # Identity bootstrap — session, host, persona, operator, guidance
-    cart.ts         # Persona cart management (info, list, load)
     tts.ts          # Text-to-speech (speak, switch_voice, list, active, health)
-    signal.ts       # Signal messaging (send, voice)
-    whatsapp.ts     # WhatsApp messaging (send, voice)
     prime.ts        # PRIME session lock (claim, release, status)
     messages.ts     # Cross-session messaging (prompt, prompt_async, read)
     control.ts      # Session lifecycle (create, remove, abort, fork, revert, etc.)
-    ...             # 30+ more tool files
+    ...             # 20+ more tool files
   assets/
     Hack-Regular.ttf # Monospace font embedded in code screenshots
   hooks/
@@ -56,9 +53,6 @@ src/
     doctrine.ts     # Injects operational doctrine into system prompt
     idle.ts         # Session idle event handler
   doctrines/        # Markdown doctrine files mirrored to EEMS at plugin init
-skills/
-  kindle/           # Kindle delivery skill
-  newspaper/        # Kindle newspaper build script
 ```
 
 ## EEMS (memory + index)
@@ -180,11 +174,8 @@ The plugin reads `~/.config/madcat/config.toml` for:
 - `[embedding]` — `provider` (ollama|openai), `url`, `model`, `dimensions`, `api_key`
 - `[database]` — `dsn` (base Postgres DSN), optional `user_dsn` template with `{db_name}`
 - `[web].url` / `[mcp].oauth_issuer` — madcat-web origin for `/api/me` (default `https://madcat-os.com`)
-- `[signal]` / `[whatsapp]` — messaging bridge config
 - `[mcp].disabled_tools` — tools to exclude from registration
 
-The Kindle/newspaper skills read identity from the environment (`opencode-serve.env`):
-`MADCAT_MAIL_SENDER`, `MADCAT_MAIL_ACCOUNT` (optional), `MADCAT_KINDLE_EMAIL`, `MADCAT_MAIL_DISPLAY`.
 Nothing host- or operator-specific is checked in; the package is public on npmjs.
 
 Dual-DSN mode (per-user memory isolation) is activated by env vars:

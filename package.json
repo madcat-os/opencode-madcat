@@ -7,10 +7,9 @@
   },
   "files": [
     "src/",
-    "skills/",
     "CHANGELOG.md"
   ],
-  "description": "OpenCode plugin for the MADCAT operating system — memory (EEMS), TTS, messaging, mesh orchestration, code index, persona hooks.",
+  "description": "OpenCode plugin for the MADCAT operating system — memory (EEMS), TTS, mesh orchestration, code index, persona hooks.",
   "keywords": [
     "opencode",
     "opencode-plugin",

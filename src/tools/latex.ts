@@ -3,9 +3,6 @@
  *
  * Tectonic is a self-contained LaTeX engine (Rust, no TeX Live dependency).
  * Downloads packages on demand, caches them locally.
- *
- * Use with signal_send/whatsapp_send(attachment=path) to share PDFs,
- * or with kindle tools for document delivery.
  */
 
 import { tool } from "../lib/tool"
@@ -23,7 +20,6 @@ function tmpTex(): string {
 export const render = tool({
   description:
     "Render LaTeX source to PDF via tectonic. Returns the file path of the generated PDF. " +
-    "Use with signal_send/whatsapp_send(attachment=path) to share, or kindle tools for delivery. " +
     "Tectonic is a self-contained LaTeX engine — supports full LaTeX including packages, math, tables, " +
     "TikZ, etc. Packages are downloaded automatically on first use.",
   args: {

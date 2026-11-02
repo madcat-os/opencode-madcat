@@ -122,36 +122,6 @@ export function tensorsUrl(): string {
   return process.env.TENSORS_API_URL ?? get("tensors.url") ?? "http://localhost:51200"
 }
 
-/** Signal-cli JSON-RPC API URL. Env override → config.toml → default. */
-export function signalApiUrl(): string {
-  return process.env.SIGNAL_API_URL ?? get("signal.api_url") ?? "http://localhost:7583/api/v1/rpc"
-}
-
-/** SSH host where signal-cli runs — used for SCP'ing attachments/voice notes. */
-export function signalHost(): string {
-  return get("signal.host") ?? "localhost"
-}
-
-/** Signal account number. */
-export function signalAccount(): string {
-  return get("signal.account") ?? "+48600965497"
-}
-
-/** Default Signal recipient (operator). */
-export function signalOperator(): string {
-  return get("signal.operator") ?? ""
-}
-
-/** WhatsApp bridge HTTP API URL. Env override → config.toml → default. */
-export function whatsappBridgeUrl(): string {
-  return process.env.WA_BRIDGE_URL ?? get("whatsapp.bridge_url") ?? "http://localhost:7591"
-}
-
-/** Default WhatsApp recipient (operator, no + prefix). */
-export function whatsappOperator(): string {
-  return get("whatsapp.operator") ?? ""
-}
-
 export function chatSaidenCartDir(): string {
   return (
     process.env.CHAT_SAIDEN_CART_DIR ??

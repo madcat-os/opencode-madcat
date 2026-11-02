@@ -2,6 +2,22 @@
 
 All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/opencode-plugin`) are documented here.
 
+## Unreleased — audio, cart, icons, kindle, signal, whatsapp tools removed
+
+### Removed
+
+- `audio_*` (concat, convert, effects, mix, normalize, probe, silence, split,
+  trim, waveform), `cart_*` (info, list, load), `icons_*` (categories,
+  download, search), `kindle_*` (newspaper, newspaper_current,
+  newspaper_next, send_content), `signal_*` (send, voice) and `whatsapp_*`
+  (presence, send, send_location, voice) tool namespaces, with the
+  `skills/kindle` and `skills/newspaper` scripts the kindle tools drove.
+  `[signal]` / `[whatsapp]` in `config.toml` are no longer read. Any
+  `[mcp].disabled_tools` entry naming them is now a no-op.
+- `src/lib/audio.ts` (local playback) stays: `tts_speak` plays through it.
+  Persona cart resolution in `hooks/persona.ts` and `whoami_info` is
+  unchanged; only the cart management tools are gone.
+
 ## 2.9.0 — legacy memory tools removed
 
 ### Removed

@@ -25,8 +25,6 @@ import { initAudio } from "./lib/audio"
 import { initSilicon } from "./lib/silicon"
 
 // ── Tool modules (pure TS — always available) ───────────────
-import * as audio from "./tools/audio"
-import * as cart from "./tools/cart"
 import * as auth from "./tools/auth"
 import * as brave from "./tools/brave"
 import * as control from "./tools/control"
@@ -35,20 +33,16 @@ import * as find from "./tools/find"
 import * as geo from "./tools/geo"
 import * as infra from "./tools/infra"
 import * as json from "./tools/json"
-import * as kindle from "./tools/kindle"
 import * as messages from "./tools/messages"
 import * as pty from "./tools/pty"
 import * as server from "./tools/server"
 import * as sessions from "./tools/sessions"
-import * as signal from "./tools/signal"
-import * as whatsapp from "./tools/whatsapp"
 import * as smoketest from "./tools/smoketest"
 import * as tools from "./tools/tools"
 import { bindToolLister } from "./tools/tools"
 import * as tts from "./tools/tts"
 import * as workspace from "./tools/workspace"
 import * as whoami from "./tools/whoami"
-import * as icons from "./tools/icons"
 
 import * as prime from "./tools/prime"
 import * as worktree from "./tools/worktree"
@@ -111,9 +105,7 @@ export default Plugin.define({
 
     // ── Register all tools ────────────────────────────────────
     const defs: Record<string, ToolDefinition> = {
-      ...ns("audio", audio),
       ...ns("brave", brave),
-      ...ns("cart", cart),
       ...ns("code", screenshot),
       ...ns("image", image),
       ...ns("latex", latex),
@@ -125,17 +117,13 @@ export default Plugin.define({
       ...ns("file", file),
       ...ns("find", find),
       ...ns("geo", geo),
-      ...ns("icons", icons),
       ...ns("infra", infra),
       ...ns("json", json),
-      ...ns("kindle", kindle),
       ...ns("messages", messages),
       ...ns("prime", prime),
       ...ns("pty", pty),
       ...ns("server", server),
       ...ns("sessions", sessions),
-      ...ns("signal", signal),
-      ...ns("whatsapp", whatsapp),
       ...ns("smoketest", smoketest),
       ...ns("tools", tools),
       ...ns("whoami", whoami),

@@ -4,8 +4,6 @@
  * Calls POST /api/comfyui/generate on the tensors host (config.toml [tensors]),
  * polls for the result, and downloads the PNG to local /tmp. Runs on the GPU
  * via ComfyUI — no model loading in-process, so it coexists with TTS.
- *
- * Use with signal_send(attachment=path) to share generated images.
  */
 
 import { tool } from "../lib/tool"
@@ -30,8 +28,8 @@ function tmpPng(): string {
 export const generate = tool({
   description:
     "Generate an image from a text prompt via Stable Diffusion (ComfyUI on the GPU). " +
-    "Returns the local file path of the rendered PNG. Use with signal_send(attachment=path) " +
-    "to share. Runs on RTX 2000 Ada — SDXL and SD1.5 checkpoints available. " +
+    "Returns the local file path of the rendered PNG. " +
+    "Runs on RTX 2000 Ada — SDXL and SD1.5 checkpoints available. " +
     "Coexists with TTS (no in-process model loading). " +
     "List models with image_models.",
   args: {

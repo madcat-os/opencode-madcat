@@ -2,8 +2,7 @@
  * Code screenshot tool — renders syntax-highlighted code to PNG.
  *
  * shiki highlighting → SVG window frame → resvg-wasm raster (src/lib/silicon.ts).
- * No browser, no network, no native binary. Primary use case: sending code
- * screenshots via Signal.
+ * No browser, no network, no native binary.
  */
 
 import { tool } from "../lib/tool"
@@ -19,8 +18,7 @@ function tmpPng(): string {
 export const screenshot = tool({
   description:
     "Render syntax-highlighted code to a PNG image with terminal window chrome. " +
-    "Returns the file path. Use with signal_send(attachment=path) to share code " +
-    "as images. No browser, no network. 340+ languages (TextMate grammars) and " +
+    "Returns the file path. No browser, no network. 340+ languages (TextMate grammars) and " +
     "any shiki bundled theme (default: github-dark).",
   args: {
     code: tool.schema.string().describe("Source code text to render"),
