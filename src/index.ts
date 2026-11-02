@@ -26,11 +26,7 @@ import { initSilicon } from "./lib/silicon"
 
 // ── Tool modules (pure TS — always available) ───────────────
 import * as auth from "./tools/auth"
-import * as brave from "./tools/brave"
 import * as control from "./tools/control"
-import * as file from "./tools/file"
-import * as find from "./tools/find"
-import * as geo from "./tools/geo"
 import * as infra from "./tools/infra"
 import * as json from "./tools/json"
 import * as messages from "./tools/messages"
@@ -41,15 +37,12 @@ import * as smoketest from "./tools/smoketest"
 import * as tools from "./tools/tools"
 import { bindToolLister } from "./tools/tools"
 import * as tts from "./tools/tts"
-import * as workspace from "./tools/workspace"
 import * as whoami from "./tools/whoami"
 
 import * as prime from "./tools/prime"
-import * as worktree from "./tools/worktree"
 import * as ingest from "./tools/ingest"
 import * as screenshot from "./tools/screenshot"
 import * as image from "./tools/image"
-import * as latex from "./tools/latex"
 import * as memory from "./tools/memory"
 import * as indexer from "./tools/indexer"
 
@@ -59,7 +52,7 @@ function isToolDef(v: unknown): v is ToolDefinition {
 }
 
 /**
- * Namespace a module's tool exports: { search } → { brave_search }, returning
+ * Namespace a module's tool exports: { read } → { json_read }, returning
  * V1-shaped definitions keyed by their effective V2 tool name.
  */
 function ns(prefix: string, mod: Record<string, unknown>): Record<string, ToolDefinition> {
@@ -105,18 +98,13 @@ export default Plugin.define({
 
     // ── Register all tools ────────────────────────────────────
     const defs: Record<string, ToolDefinition> = {
-      ...ns("brave", brave),
       ...ns("code", screenshot),
       ...ns("image", image),
-      ...ns("latex", latex),
       ...ns("memory", memory),
       ...ns("index", indexer),
       ...ns("tts", tts),
       ...ns("auth", auth),
       ...ns("control", control),
-      ...ns("file", file),
-      ...ns("find", find),
-      ...ns("geo", geo),
       ...ns("infra", infra),
       ...ns("json", json),
       ...ns("messages", messages),
@@ -127,8 +115,6 @@ export default Plugin.define({
       ...ns("smoketest", smoketest),
       ...ns("tools", tools),
       ...ns("whoami", whoami),
-      ...ns("workspace", workspace),
-      ...ns("worktree", worktree),
       ...ns("ingest", ingest),
     }
 

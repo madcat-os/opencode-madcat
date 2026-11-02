@@ -38,8 +38,8 @@ The plugin is V2 (`@opencode/plugin`) but every tool module is written in the V1
 1. **Author** a tool in `src/tools/<namespace>.ts` with the local `tool()` shim from
    `src/lib/tool.ts`: `{ description, args: ZodRawShape, execute(args, ctx) }`. `tool.schema` is
    Zod. `execute` returns a string or `{ output, metadata?, attachments? }`.
-2. **Export** it as a named export. `index.ts` calls `ns("brave", brave)`, which turns every export
-   that looks like a tool definition into `brave_<exportName>`. The tool's public name is derived
+2. **Export** it as a named export. `index.ts` calls `ns("json", json)`, which turns every export
+   that looks like a tool definition into `json_<exportName>`. The tool's public name is derived
    from the namespace prefix in `index.ts` plus the export name, so renaming an export renames the
    tool. Non-tool exports (helpers, types) are ignored by `ns()`.
 3. **Register** a new namespace by importing the module in `index.ts` and adding one `...ns(...)`

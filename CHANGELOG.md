@@ -2,9 +2,13 @@
 
 All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/opencode-plugin`) are documented here.
 
-## Unreleased — audio, cart, icons, kindle, signal, whatsapp tools removed
+## Unreleased — tool surface trimmed
 
 ### Removed
+
+- `latex_render`, `geo_*` (search, reverse), `brave_search`, `workspace_*`,
+  `worktree_*`, `file_*` and `find_*` tool namespaces. `BRAVE_API_KEY` and
+  `TECTONIC_PATH` are no longer read.
 
 - `audio_*` (concat, convert, effects, mix, normalize, probe, silence, split,
   trim, waveform), `cart_*` (info, list, load), `icons_*` (categories,
