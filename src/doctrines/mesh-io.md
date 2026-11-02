@@ -15,7 +15,6 @@ You operate across a mesh of hosts (fuji, sin, junkpile, bastion). File mutation
 |---|---|
 | File is under git | Edit on the host where you have a real checkout. Commit. Push. `git pull` on the other host(s). |
 | File is not under git | Write the new content to a local `/tmp` file. `scp` it to the target. |
-| File is a JSON config | Prefer the structured `json_*` tools (`json_set`, `json_merge`, `json_del`) — they accept `host:/path` and manipulate parsed structure, not raw text. |
 | You need to read remote state | Read-only ssh is encouraged: `cat`, `journalctl`, `curl`, `ss -tlnp`, `ps -ef`, `systemctl status`, `which`, `ls`, `stat`. Safe and fast. |
 
 ### Why this matters

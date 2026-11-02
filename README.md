@@ -2,7 +2,7 @@
 
 OpenCode plugin for the MADCAT operating system. Runs inside opencode's Bun
 runtime — TypeScript executed natively, no build step. Registers the MADCAT tool
-surface (memory, messaging, mesh orchestration, infra),
+surface (memory, messaging, mesh orchestration),
 persona hooks, doctrine mirroring, and event handlers.
 
 ## Install
@@ -28,7 +28,7 @@ data.
 ## Tool namespaces
 
 Memory (EEMS), sessions, whoami, PRIME locks, cross-session
-messaging, session control, infra, and more — one file per namespace
+messaging, session control, and more — one file per namespace
 under `src/tools/`.
 
 ## EEMS memory

@@ -102,11 +102,6 @@ export function embedUrl(): string {
   return embeddingConfig().url
 }
 
-/** Tensors API URL — ComfyUI image generation gateway. Env → config → default. */
-export function tensorsUrl(): string {
-  return process.env.TENSORS_API_URL ?? get("tensors.url") ?? "http://localhost:51200"
-}
-
 export function chatSaidenCartDir(): string {
   return (
     process.env.CHAT_SAIDEN_CART_DIR ??

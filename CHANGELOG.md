@@ -20,6 +20,11 @@ All notable changes to `@madcat-os/opencode-madcat` (formerly `@madcat-os/openco
   existing ones are left in place. Drops the `shiki`, `@resvg/resvg-wasm`,
   `@firecrawl/pdf-inspector` and `@kreuzberg/html-to-markdown-node`
   dependencies.
+- `infra_*` (mcp, mcp_add, mcp_remove, mcp_connect, mcp_disconnect, skills),
+  `json_*` (read, set, del, merge, keys, validate) and `image_*` (generate,
+  models). `[tensors]` / `TENSORS_API_URL` are no longer read. `lib/repos.ts`,
+  which nothing imported, goes with them. The `mesh-io` and `tool-selection`
+  doctrines no longer point at `json_*`.
 
 - `audio_*` (concat, convert, effects, mix, normalize, probe, silence, split,
   trim, waveform), `cart_*` (info, list, load), `icons_*` (categories,

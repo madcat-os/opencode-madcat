@@ -13,7 +13,6 @@ For every operation there is a right tool. Use it.
 | Create a file | `Write` | `bash echo > / cat <<EOF` |
 | Find files by name | `Glob` | `bash find / ls -R` |
 | Search file contents | `Grep` | `bash grep` (use `rg` only when you need counts or streaming) |
-| Edit a JSON config | `json_set` / `json_merge` / `json_del` | text-editing the JSON |
 
 Dedicated tools give you: schema awareness, atomicity, diff preview, undo, syntax validation, structured errors. Bash text manipulation gives you none of these and routinely produces broken files.
 
@@ -38,4 +37,4 @@ Not for file mutations. Not for content search. Not for communication.
 
 ### When uncertain
 
-Pick the more specialized tool. `Edit` over `Bash sed`. `Grep` over `Bash grep`. `json_set` over `Edit`. The specialized tool has fewer ways to go wrong.
+Pick the more specialized tool. `Edit` over `Bash sed`. `Grep` over `Bash grep`. The specialized tool has fewer ways to go wrong.

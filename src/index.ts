@@ -25,8 +25,6 @@ import { initNative } from "./lib/native"
 // ── Tool modules (pure TS — always available) ───────────────
 import * as auth from "./tools/auth"
 import * as control from "./tools/control"
-import * as infra from "./tools/infra"
-import * as json from "./tools/json"
 import * as messages from "./tools/messages"
 import * as pty from "./tools/pty"
 import * as server from "./tools/server"
@@ -37,7 +35,6 @@ import { bindToolLister } from "./tools/tools"
 import * as whoami from "./tools/whoami"
 
 import * as prime from "./tools/prime"
-import * as image from "./tools/image"
 import * as memory from "./tools/memory"
 
 /** A V1-shaped tool definition carries `description` + `execute` (+ `args`). */
@@ -46,7 +43,7 @@ function isToolDef(v: unknown): v is ToolDefinition {
 }
 
 /**
- * Namespace a module's tool exports: { read } → { json_read }, returning
+ * Namespace a module's tool exports: { recall } → { memory_recall }, returning
  * V1-shaped definitions keyed by their effective V2 tool name.
  */
 function ns(prefix: string, mod: Record<string, unknown>): Record<string, ToolDefinition> {
@@ -92,12 +89,9 @@ export default Plugin.define({
 
     // ── Register all tools ────────────────────────────────────
     const defs: Record<string, ToolDefinition> = {
-      ...ns("image", image),
       ...ns("memory", memory),
       ...ns("auth", auth),
       ...ns("control", control),
-      ...ns("infra", infra),
-      ...ns("json", json),
       ...ns("messages", messages),
       ...ns("prime", prime),
       ...ns("pty", pty),

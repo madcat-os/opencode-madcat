@@ -2,7 +2,7 @@
 
 ## What this is
 
-OpenCode plugin for the MADCAT operating system. Runs inside opencode's Bun runtime — TypeScript executed natively, no compilation step. Registers custom tools (memory, messaging, mesh orchestration, infra, etc.), persona hooks, doctrine mirroring, and event handlers.
+OpenCode plugin for the MADCAT operating system. Runs inside opencode's Bun runtime — TypeScript executed natively, no compilation step. Registers custom tools (memory, messaging, mesh orchestration), persona hooks, doctrine mirroring, and event handlers.
 
 Published to npmjs as `@madcat-os/opencode-madcat` from GitHub Actions. Consumed by opencode instances on fuji, sin, and junkpile via the `"plugin"` array in `opencode.jsonc`.
 
@@ -32,7 +32,6 @@ src/
     identity.ts     # ToolContext type, agent identity resolution
     mirror.ts       # Filesystem → EEMS doctrine mirroring
     doctrines.ts    # Loads doctrine markdown files from src/doctrines/
-    repos.ts        # Infrastructure prompt generation
   tools/            # One file per tool namespace — exports tool definitions via tool() helper
     memory.ts       # EEMS memory (recall, store, list, get, forget, classify, link, graph)
     sessions.ts     # Session list, status, get, diff, children, search, ingest
