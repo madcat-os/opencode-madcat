@@ -48,7 +48,10 @@ export function formatHosts(statuses: HostStatus[]): string {
 export function formatRoster(entries: RosterEntry[], now = Date.now()): string {
   if (entries.length === 0) return "No workers in the roster."
   return entries
-    .map((e) => `${GLYPH[e.state]} ${e.host}/${e.name}  ${e.state}  ${age(now - e.lastSeen)}  ${e.sessionID}  ${e.directory}`)
+    .map(
+      (e) =>
+        `${GLYPH[e.state]} ${e.host}/${e.name}  ${e.state}  ${age(now - e.lastSeen)}  ${e.sessionID}  ${e.directory}`,
+    )
     .join("\n")
 }
 
@@ -59,7 +62,12 @@ export function isNotFound(error: unknown): boolean {
 }
 
 function parseFlags(text: string): Set<string> {
-  return new Set(text.split(/\s+/).filter((w) => w.startsWith("--")).map((w) => w.slice(2)))
+  return new Set(
+    text
+      .split(/\s+/)
+      .filter((w) => w.startsWith("--"))
+      .map((w) => w.slice(2)),
+  )
 }
 
 export default Plugin.define({
@@ -80,14 +88,16 @@ export default Plugin.define({
     const supervisor = new Supervisor(ctx, peers, state)
     const steer = new Steer(peers)
 
-    const note = (sessionID: string, text: string) => ctx.session.synthetic({ sessionID, text: `[mesh] ${text}` }).catch(() => {})
+    const note = (sessionID: string, text: string) =>
+      ctx.session.synthetic({ sessionID, text: `[mesh] ${text}` }).catch(() => {})
 
     // Nonces are minted by deliver() and consumed by the prompt hook. The plugin is instantiated once per
     // location, and the RPC handler and the target session's hook may run in different instances, so the
     // nonce lives in storage (shared across instances), not in memory.
     await ctx.session.hook("prompt", async (event) => {
       const mesh = event.metadata?.mesh
-      const nonce = mesh && typeof mesh === "object" && "nonce" in mesh ? (mesh as { nonce?: unknown }).nonce : undefined
+      const nonce =
+        mesh && typeof mesh === "object" && "nonce" in mesh ? (mesh as { nonce?: unknown }).nonce : undefined
       if (typeof nonce !== "string") return
       const entry = await state.takeNonce(nonce)
       if (!entry) return
@@ -155,7 +165,8 @@ export default Plugin.define({
         return { role: "supervisor", host: peers.self, sessionID, supervisor: sup }
       }
       const worker = await state.worker(sessionID)
-      if (worker) return { role: "worker", host: peers.self, sessionID, name: worker.name, supervisor: worker.supervisor }
+      if (worker)
+        return { role: "worker", host: peers.self, sessionID, name: worker.name, supervisor: worker.supervisor }
       return { role: "none", host: peers.self, sessionID }
     }
 
@@ -176,10 +187,18 @@ export default Plugin.define({
       async register(input, { error }) {
         for (const w of await state.workers()) {
           if (w.name === input.name && w.sessionID !== input.sessionID) {
-            return error("name_taken", `worker name "${input.name}" is already used on ${peers.self}`, { name: input.name, sessionID: w.sessionID })
+            return error("name_taken", `worker name "${input.name}" is already used on ${peers.self}`, {
+              name: input.name,
+              sessionID: w.sessionID,
+            })
           }
         }
-        await state.setWorker(input.sessionID, { name: input.name, directory: input.directory, supervisor: input.supervisor, createdAt: Date.now() })
+        await state.setWorker(input.sessionID, {
+          name: input.name,
+          directory: input.directory,
+          supervisor: input.supervisor,
+          createdAt: Date.now(),
+        })
         await ctx.session.instructions.entry
           .put({
             sessionID: input.sessionID,
@@ -222,13 +241,18 @@ export default Plugin.define({
       async notify(input) {
         const me = await state.supervisor()
         if (!me || me.host !== peers.self) return { known: false }
-        const known = await applyRoster(input.host, input.sessionID, input.removed ? { removed: true } : { state: input.state })
+        const known = await applyRoster(
+          input.host,
+          input.sessionID,
+          input.removed ? { removed: true } : { state: input.state },
+        )
         return { known }
       },
 
       async roster({ refresh }) {
         const sup = await state.supervisor()
-        if (!sup || sup.host !== peers.self) return { host: peers.self, ...(sup ? { supervisor: sup } : {}), entries: [] }
+        if (!sup || sup.host !== peers.self)
+          return { host: peers.self, ...(sup ? { supervisor: sup } : {}), entries: [] }
         if (refresh) await observer.reconcileAll(true)
         return { host: peers.self, supervisor: sup, entries: await state.roster() }
       },
@@ -236,7 +260,8 @@ export default Plugin.define({
       async read({ host, sessionID, tail }, { error }) {
         const sup = await state.supervisor()
         const entry = sup?.host === peers.self ? await state.rosterEntry(host, sessionID) : undefined
-        if (!entry) return error("unauthorized", `${host}/${sessionID} is not in this host's roster`, { reason: "not-in-roster" })
+        if (!entry)
+          return error("unauthorized", `${host}/${sessionID} is not in this host's roster`, { reason: "not-in-roster" })
         try {
           return { text: await steer.read({ host, sessionID }, tail ?? 50) }
         } catch (cause) {
@@ -249,17 +274,29 @@ export default Plugin.define({
         const worker = await state.worker(input.to)
         if (worker) {
           if (!same(worker.supervisor, input.from)) {
-            return error("unauthorized", `only the supervisor ${worker.supervisor.host}/${worker.supervisor.sessionID} may message worker ${worker.name}`, {
-              reason: "not-supervisor",
-            })
+            return error(
+              "unauthorized",
+              `only the supervisor ${worker.supervisor.host}/${worker.supervisor.sessionID} may message worker ${worker.name}`,
+              {
+                reason: "not-supervisor",
+              },
+            )
           }
         } else if (sup && sup.host === peers.self && sup.sessionID === input.to) {
           const known = await state.rosterEntry(input.from.host, input.from.sessionID)
           if (!known) {
-            return error("unauthorized", `${input.from.host}/${input.from.sessionID} is not a worker in the supervisor's roster`, { reason: "not-in-roster" })
+            return error(
+              "unauthorized",
+              `${input.from.host}/${input.from.sessionID} is not a worker in the supervisor's roster`,
+              { reason: "not-in-roster" },
+            )
           }
         } else {
-          return error("unauthorized", `session ${input.to} is neither a mesh worker nor the supervisor on ${peers.self}`, { reason: "not-mesh-session" })
+          return error(
+            "unauthorized",
+            `session ${input.to} is neither a mesh worker nor the supervisor on ${peers.self}`,
+            { reason: "not-mesh-session" },
+          )
         }
 
         const nonce = crypto.randomUUID()
@@ -274,7 +311,8 @@ export default Plugin.define({
           })
         } catch (cause) {
           await state.takeNonce(nonce)
-          if (isNotFound(cause)) return error("no_session", `session ${input.to} does not exist on ${peers.self}`, { sessionID: input.to })
+          if (isNotFound(cause))
+            return error("no_session", `session ${input.to} does not exist on ${peers.self}`, { sessionID: input.to })
           throw cause
         }
         await rpc.events.emit("message", { from: input.from, to: input.to, kind: input.kind, msgID: input.msgID })
@@ -293,13 +331,20 @@ export default Plugin.define({
 
           if (flags.has("status")) {
             const rows = await supervisor.status()
-            const views = new Set(rows.filter((r) => r.ok).map((r) => (r.ok && r.supervisor ? `${r.supervisor.host}/${r.supervisor.sessionID}` : "none")))
+            const views = new Set(
+              rows
+                .filter((r) => r.ok)
+                .map((r) => (r.ok && r.supervisor ? `${r.supervisor.host}/${r.supervisor.sessionID}` : "none")),
+            )
             const lines = rows.map((r) => {
               const tag = r.self ? " (self)" : ""
               if (!r.ok) return `✗ ${r.peer}${tag}  unreachable: ${r.error}`
               return `● ${r.peer}${tag}  ${r.supervisor ? `${r.supervisor.host}/${r.supervisor.sessionID} (claimed ${age(Date.now() - r.supervisor.claimedAt)} ago)` : "no supervisor"}`
             })
-            const verdict = views.size > 1 ? "\nDISAGREEMENT: hosts do not agree on the supervisor. Resolve with /super --force from the side that should win." : ""
+            const verdict =
+              views.size > 1
+                ? "\nDISAGREEMENT: hosts do not agree on the supervisor. Resolve with /super --force from the side that should win."
+                : ""
             await note(sessionID, `supervisor status\n${lines.join("\n")}${verdict}`)
             return
           }
@@ -307,29 +352,46 @@ export default Plugin.define({
           if (flags.has("release")) {
             const result = await supervisor.release(sessionID)
             if (!result.ok) {
-              await note(sessionID, result.held ? `this session is not the supervisor; ${result.held.host}/${result.held.sessionID} holds it.` : "no supervisor claim to release.")
+              await note(
+                sessionID,
+                result.held
+                  ? `this session is not the supervisor; ${result.held.host}/${result.held.sessionID} holds it.`
+                  : "no supervisor claim to release.",
+              )
               return
             }
             await rpc.events.emit("supervisor", { released: true })
             const skipped = result.unreachable.length ? ` Unreachable: ${result.unreachable.join(", ")}.` : ""
-            await note(sessionID, `supervisor released. Interrupted ${result.interrupted} worker(s); they stay registered.${skipped}`)
+            await note(
+              sessionID,
+              `supervisor released. Interrupted ${result.interrupted} worker(s); they stay registered.${skipped}`,
+            )
             return
           }
 
           const result = await supervisor.claim(sessionID, { force: flags.has("force") })
           if (!result.ok) {
             const where = result.reason === "local-held" ? "this host" : result.on
-            await note(sessionID, `claim refused: ${result.held.host}/${result.held.sessionID} holds the supervisor (reported by ${where}). Use /super --force to take it.`)
+            await note(
+              sessionID,
+              `claim refused: ${result.held.host}/${result.held.sessionID} holds the supervisor (reported by ${where}). Use /super --force to take it.`,
+            )
             return
           }
-          await ctx.session.switchAgent({ sessionID, agent: "super" }).catch((e) => console.warn(`[madcat] switchAgent failed: ${describe(e)}`))
+          await ctx.session
+            .switchAgent({ sessionID, agent: "super" })
+            .catch((e) => console.warn(`[madcat] switchAgent failed: ${describe(e)}`))
           await ctx.session.instructions.entry
             .put({ sessionID, key: "mesh.identity", value: { role: "supervisor", host: peers.self, sessionID } })
             .catch(() => {})
           await rpc.events.emit("supervisor", { supervisor: result.ref })
           const roster = await state.roster()
-          const adopted = roster.length ? ` Adopted ${roster.length} existing roster entr${roster.length === 1 ? "y" : "ies"}.` : ""
-          const skipped = result.unreachable.length ? ` Unreachable (will learn on next contact): ${result.unreachable.join(", ")}.` : ""
+          const adopted = roster.length
+            ? ` Adopted ${roster.length} existing roster entr${roster.length === 1 ? "y" : "ies"}.`
+            : ""
+          const skipped = result.unreachable.length
+            ? ` Unreachable (will learn on next contact): ${result.unreachable.join(", ")}.`
+            : ""
           await note(sessionID, `this session is now the mesh supervisor on ${peers.self}.${adopted}${skipped}`)
         },
       })
@@ -390,7 +452,10 @@ export default Plugin.define({
 
       const target = async (ref: string) => {
         const found = await resolve(ref)
-        if (!found) throw new SteerError(`no worker "${ref}" in the roster. Use host/name, name, or a session id; mesh_sessions lists them.`)
+        if (!found)
+          throw new SteerError(
+            `no worker "${ref}" in the roster. Use host/name, name, or a session id; mesh_sessions lists them.`,
+          )
         return found
       }
 
@@ -410,7 +475,10 @@ export default Plugin.define({
         description:
           "Create a mesh worker session on a host and give it standing orders. host defaults to this host; directory defaults to the host's configured default. Returns the worker's mesh address. Optional prompt is queued as the first order.",
         input: z.object({
-          name: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/).describe("short unique worker name on that host"),
+          name: z
+            .string()
+            .regex(/^[a-z0-9][a-z0-9_-]*$/)
+            .describe("short unique worker name on that host"),
           orders: z.string().describe("the brief: goal, boundaries, definition of done, what to report"),
           host: z.string().optional().describe("mesh host name; defaults to self"),
           directory: z.string().optional().describe("absolute working directory; defaults to the host's default"),
@@ -424,8 +492,15 @@ export default Plugin.define({
             if (!peer) throw new SteerError(`unknown host "${host}"`)
             const directory = input.directory ?? peer.directory
             if (!directory) throw new SteerError(`host ${host} has no default directory; pass one`)
-            if (await resolve(`${host}/${input.name}`)) throw new SteerError(`worker ${host}/${input.name} already exists`)
-            const t = await steer.spawn(sup, { host, name: input.name, directory, orders: input.orders, prompt: input.prompt })
+            if (await resolve(`${host}/${input.name}`))
+              throw new SteerError(`worker ${host}/${input.name} already exists`)
+            const t = await steer.spawn(sup, {
+              host,
+              name: input.name,
+              directory,
+              orders: input.orders,
+              prompt: input.prompt,
+            })
             await applyRoster(host, t.sessionID, { name: input.name, directory, state: "spawning" })
             return `spawned ${host}/${input.name} (${t.sessionID}) in ${directory}${input.prompt ? "; first order queued" : ""}`
           }),
@@ -457,7 +532,8 @@ export default Plugin.define({
 
       editor.add({
         name: "orders",
-        description: "Replace a worker's standing orders (its mesh.orders context block), or remove them. The worker sees the change at its next step without being interrupted.",
+        description:
+          "Replace a worker's standing orders (its mesh.orders context block), or remove them. The worker sees the change at its next step without being interrupted.",
         input: z.object({
           to: z.string().describe("worker as host/name, name, or session id"),
           value: z.string().optional().describe("new orders; omit together with remove=true to clear"),
@@ -494,7 +570,8 @@ export default Plugin.define({
 
       editor.add({
         name: "interrupt",
-        description: "Stop a worker's current turn. resume=true lets it continue after handling queued messages; default false.",
+        description:
+          "Stop a worker's current turn. resume=true lets it continue after handling queued messages; default false.",
         input: z.object({
           to: z.string().describe("worker as host/name, name, or session id"),
           resume: z.boolean().optional(),
@@ -504,13 +581,16 @@ export default Plugin.define({
           run(context.sessionID, async () => {
             const t = await target(input.to)
             const did = await steer.interrupt(t, input.resume ?? false)
-            return did ? `interrupted ${t.host}/${t.name}${input.resume ? " (will resume)" : ""}` : `${t.host}/${t.name} was not running`
+            return did
+              ? `interrupted ${t.host}/${t.name}${input.resume ? " (will resume)" : ""}`
+              : `${t.host}/${t.name} was not running`
           }),
       })
 
       editor.add({
         name: "wait",
-        description: "Block until a worker is idle (up to 30 minutes). Prefer waiting for its report; use this when you need the result synchronously.",
+        description:
+          "Block until a worker is idle (up to 30 minutes). Prefer waiting for its report; use this when you need the result synchronously.",
         input: z.object({
           to: z.string().describe("worker as host/name, name, or session id"),
           timeout: z.number().int().positive().optional().describe("seconds; default 1800"),

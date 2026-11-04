@@ -5,7 +5,11 @@ import { PERM, registerAgents } from "../src/agents.ts"
 type Rule = { action: string; resource: string; effect: "allow" | "deny" | "ask" }
 type Agent = { id: string; mode: string; permissions: Rule[]; [k: string]: unknown }
 
-const base = (id: string, mode = "primary"): Agent => ({ id, mode, permissions: [{ action: "*", resource: "*", effect: "allow" }] })
+const base = (id: string, mode = "primary"): Agent => ({
+  id,
+  mode,
+  permissions: [{ action: "*", resource: "*", effect: "allow" }],
+})
 
 async function agents(): Promise<Map<string, Agent>> {
   const map = new Map<string, Agent>([
@@ -22,13 +26,16 @@ async function agents(): Promise<Map<string, Agent>> {
       fn(a)
     },
   }
-  const ctx = { agent: { transform: async (fn: (e: typeof editor) => void) => fn(editor) } } as unknown as Plugin.Context
+  const ctx = {
+    agent: { transform: async (fn: (e: typeof editor) => void) => fn(editor) },
+  } as unknown as Plugin.Context
   await registerAgents(ctx)
   return map
 }
 
 // Mirrors packages/core/src/tool.ts `whollyDisabled` + util/wildcard `match`.
-const match = (input: string, pattern: string) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`).test(input)
+const match = (input: string, pattern: string) =>
+  new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`).test(input)
 const visible = (agent: Agent, permission: string) => {
   const rule = agent.permissions.findLast((r) => match(permission, r.action))
   return !(rule?.resource === "*" && rule.effect === "deny")

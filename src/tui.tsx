@@ -17,7 +17,9 @@ type Context = Plugin.Context
  */
 function createMeshStore(context: Context) {
   const rpc = () => context.client.rpc(Mesh)
-  const [view, setView] = createStore<{ host?: string; supervisor?: SupervisorRef; rows: RosterRow[]; error?: string }>({ rows: [] })
+  const [view, setView] = createStore<{ host?: string; supervisor?: SupervisorRef; rows: RosterRow[]; error?: string }>(
+    { rows: [] },
+  )
   const [now, setNow] = createSignal(Date.now())
   const timer = setInterval(() => setNow(Date.now()), TICK)
 
@@ -40,23 +42,41 @@ function createMeshStore(context: Context) {
         return
       }
       if (degraded(prev?.state, d.state)) {
-        context.ui.toast.show({ title: "mesh", message: `${d.host}/${d.name ?? prev?.name ?? short(d.sessionID)} is ${d.state}`, variant: "error" })
+        context.ui.toast.show({
+          title: "mesh",
+          message: `${d.host}/${d.name ?? prev?.name ?? short(d.sessionID)} is ${d.state}`,
+          variant: "error",
+        })
       }
       if (!prev) return void load()
-      setView("rows", (r) => r.host === d.host && r.sessionID === d.sessionID, (r) => ({
-        ...r,
-        ...(d.name ? { name: d.name } : {}),
-        ...(d.state ? { state: d.state } : {}),
-        lastSeen: Date.now(),
-      }))
+      setView(
+        "rows",
+        (r) => r.host === d.host && r.sessionID === d.sessionID,
+        (r) => ({
+          ...r,
+          ...(d.name ? { name: d.name } : {}),
+          ...(d.state ? { state: d.state } : {}),
+          lastSeen: Date.now(),
+        }),
+      )
     }),
     rpc().events.on("supervisor", () => void load()),
     rpc().events.on("message", (event) => {
       const d = event.data
       if (!view.supervisor || d.to !== view.supervisor.sessionID || !notable(d.kind)) return
       const who = `${d.from.host}/${d.from.name}`
-      context.ui.toast.show({ title: `[${who}] ${d.kind}`, message: d.kind === "ask" ? "waiting on you" : "new report", variant: d.kind === "ask" ? "warning" : "info", sessionID: d.to })
-      void context.attention.notify({ title: `mesh · ${who}`, message: d.kind, notification: { when: "blurred" }, sound: { name: d.kind === "ask" ? "question" : "done", when: "blurred" } })
+      context.ui.toast.show({
+        title: `[${who}] ${d.kind}`,
+        message: d.kind === "ask" ? "waiting on you" : "new report",
+        variant: d.kind === "ask" ? "warning" : "info",
+        sessionID: d.to,
+      })
+      void context.attention.notify({
+        title: `mesh · ${who}`,
+        message: d.kind,
+        notification: { when: "blurred" },
+        sound: { name: d.kind === "ask" ? "question" : "done", when: "blurred" },
+      })
     }),
   ]
 
@@ -108,7 +128,13 @@ function Row(props: { store: MeshStore; row: RosterRow; selected?: boolean; wide
   const context = usePlugin()
   const th = context.theme
   return (
-    <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => props.onPick?.()} backgroundColor={props.selected ? th.background.raised.high : undefined}>
+    <box
+      flexDirection="row"
+      gap={1}
+      minWidth={0}
+      onMouseUp={() => props.onPick?.()}
+      backgroundColor={props.selected ? th.background.raised.high : undefined}
+    >
       <text flexShrink={0} fg={stateColor(context, props.row.state)}>
         {GLYPH[props.row.state]}
       </text>
@@ -135,7 +161,11 @@ function SidebarMesh(props: { store: MeshStore; sessionID: string }) {
   const th = context.theme
   const [me] = createResource(
     () => [props.sessionID, props.store.view.supervisor?.sessionID] as const,
-    async ([sessionID]): Promise<Whoami | undefined> => props.store.rpc().whoami({ sessionID }).catch(() => undefined),
+    async ([sessionID]): Promise<Whoami | undefined> =>
+      props.store
+        .rpc()
+        .whoami({ sessionID })
+        .catch(() => undefined),
   )
   const isSupervisor = () => me()?.role === "supervisor"
 
@@ -148,13 +178,21 @@ function SidebarMesh(props: { store: MeshStore; sessionID: string }) {
               <b>MESH</b>
               <span style={{ fg: th.text.muted }}>
                 {" "}
-                {who().role === "supervisor" ? `supervisor · ${who().host}` : who().role === "worker" ? `worker · ${who().host}/${who().name}` : "not a mesh session · /super"}
+                {who().role === "supervisor"
+                  ? `supervisor · ${who().host}`
+                  : who().role === "worker"
+                    ? `worker · ${who().host}/${who().name}`
+                    : "not a mesh session · /super"}
               </span>
             </text>
 
             <Show when={isSupervisor()}>
               <Show when={props.store.sorted().length > 0} fallback={<text fg={th.text.faint}>no workers</text>}>
-                <For each={props.store.sorted()}>{(row) => <Row store={props.store} row={row} onPick={() => void openWorker(context, props.store, row)} />}</For>
+                <For each={props.store.sorted()}>
+                  {(row) => (
+                    <Row store={props.store} row={row} onPick={() => void openWorker(context, props.store, row)} />
+                  )}
+                </For>
                 <text fg={th.text.faint}>{summary(props.store.tally())}</text>
               </Show>
             </Show>
@@ -176,10 +214,16 @@ function WorkerIdentity(props: { store: MeshStore; who: Whoami }) {
   return (
     <>
       <text fg={th.text.muted}>
-        supervisor <span style={{ fg: th.text.base }}>{props.who.supervisor ? `${props.who.supervisor.host}/${short(props.who.supervisor.sessionID, 12)}` : "—"}</span>
+        supervisor{" "}
+        <span style={{ fg: th.text.base }}>
+          {props.who.supervisor ? `${props.who.supervisor.host}/${short(props.who.supervisor.sessionID, 12)}` : "—"}
+        </span>
       </text>
       <text fg={th.text.muted}>
-        state <span style={{ fg: status() === "running" ? th.text.action.primary.base : th.text.muted }}>{status() === "running" ? "busy" : "idle"}</span>
+        state{" "}
+        <span style={{ fg: status() === "running" ? th.text.action.primary.base : th.text.muted }}>
+          {status() === "running" ? "busy" : "idle"}
+        </span>
       </text>
     </>
   )
@@ -188,10 +232,14 @@ function WorkerIdentity(props: { store: MeshStore; who: Whoami }) {
 function FooterStatus(props: { store: MeshStore }) {
   const context = usePlugin()
   const th = context.theme
-  const visible = () => props.store.view.supervisor?.host === props.store.view.host && props.store.view.host !== undefined
+  const visible = () =>
+    props.store.view.supervisor?.host === props.store.view.host && props.store.view.host !== undefined
   return (
     <Show when={visible()}>
-      <text fg={props.store.tally().bad ? th.text.feedback.error.base : th.text.muted} onMouseUp={() => void context.ui.panel.open(PANEL)}>
+      <text
+        fg={props.store.tally().bad ? th.text.feedback.error.base : th.text.muted}
+        onMouseUp={() => void context.ui.panel.open(PANEL)}
+      >
         {footer(props.store.tally())}
       </text>
     </Show>
@@ -222,8 +270,18 @@ function RosterPanel(props: { store: MeshStore; panel: PanelInput }) {
       { bind: "k", title: "Previous worker", group: "Mesh", run: () => move(-1) },
       { bind: "down", title: "Next worker", group: "Mesh", run: () => move(1) },
       { bind: "j", title: "Next worker", group: "Mesh", run: () => move(1) },
-      { bind: "return", title: "Open worker", group: "Mesh", run: () => void (selected() && openWorker(context, props.store, selected()!)) },
-      { bind: "r", title: "Refresh roster", group: "Mesh", run: () => void props.store.load(true).then(() => refetch()) },
+      {
+        bind: "return",
+        title: "Open worker",
+        group: "Mesh",
+        run: () => void (selected() && openWorker(context, props.store, selected()!)),
+      },
+      {
+        bind: "r",
+        title: "Refresh roster",
+        group: "Mesh",
+        run: () => void props.store.load(true).then(() => refetch()),
+      },
       { bind: "f", title: "Toggle fullscreen", group: "Mesh", run: props.panel.toggleFullscreen },
       { bind: "escape", title: "Close", group: "Mesh", run: props.panel.close },
     ],
@@ -236,7 +294,9 @@ function RosterPanel(props: { store: MeshStore; panel: PanelInput }) {
           <b>MESH</b>
         </text>
         <text fg={th.text.muted} flexGrow={1} flexShrink={1} minWidth={0} wrapMode="none" truncate>
-          {props.store.view.supervisor ? `supervisor ${props.store.view.supervisor.host}/${short(props.store.view.supervisor.sessionID, 12)}` : "no supervisor on this host"}
+          {props.store.view.supervisor
+            ? `supervisor ${props.store.view.supervisor.host}/${short(props.store.view.supervisor.sessionID, 12)}`
+            : "no supervisor on this host"}
         </text>
       </box>
       <text fg={th.text.faint} flexShrink={0} wrapMode="none" truncate>
@@ -248,7 +308,15 @@ function RosterPanel(props: { store: MeshStore; panel: PanelInput }) {
       <box flexDirection="column" flexShrink={0} paddingTop={1}>
         <Show when={rows().length > 0} fallback={<text fg={th.text.faint}>no workers</text>}>
           <For each={rows()}>
-            {(row, i) => <Row store={props.store} row={row} wide selected={i() === index()} onPick={() => (i() === index() ? void openWorker(context, props.store, row) : setIndex(i()))} />}
+            {(row, i) => (
+              <Row
+                store={props.store}
+                row={row}
+                wide
+                selected={i() === index()}
+                onPick={() => (i() === index() ? void openWorker(context, props.store, row) : setIndex(i()))}
+              />
+            )}
           </For>
         </Show>
         <text fg={th.text.faint}>{summary(props.store.tally())}</text>
@@ -287,7 +355,11 @@ function Commands(props: { store: MeshStore }) {
         run: () => {
           const current = context.ui.panel.current()
           if (current?.name === PANEL) return context.ui.panel.close()
-          if (!context.ui.panel.open(PANEL)) context.ui.toast.show({ title: "mesh", message: footer(props.store.tally()) + " — open a session to see the panel" })
+          if (!context.ui.panel.open(PANEL))
+            context.ui.toast.show({
+              title: "mesh",
+              message: footer(props.store.tally()) + " — open a session to see the panel",
+            })
         },
       },
       {
@@ -317,7 +389,10 @@ export default Plugin.define({
     })
 
     context.ui.slot({ append: "app", render: () => <Commands store={store} /> })
-    context.ui.slot({ append: "sidebar.content", render: (input) => <SidebarMesh store={store} sessionID={input.sessionID} /> })
+    context.ui.slot({
+      append: "sidebar.content",
+      render: (input) => <SidebarMesh store={store} sessionID={input.sessionID} />,
+    })
     context.ui.slot({ append: "home.footer.status", render: () => <FooterStatus store={store} /> })
     context.ui.slot({ append: "prompt.footer.status", render: () => <FooterStatus store={store} /> })
     context.ui.slot({

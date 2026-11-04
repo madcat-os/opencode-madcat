@@ -14,8 +14,7 @@ export type ClaimResult =
   | { ok: false; reason: "local-held" | "remote-held"; held: SupervisorRef; on: string }
 
 export type PeerClaimOutcome =
-  | { peer: string; ok: true; result: ClaimOutput }
-  | { peer: string; ok: false; error: string }
+  { peer: string; ok: true; result: ClaimOutput } | { peer: string; ok: false; error: string }
 
 export class Supervisor {
   constructor(
@@ -50,7 +49,9 @@ export class Supervisor {
     return { ok: true, ref, unreachable: outcomes.filter((o) => !o.ok).map((o) => o.peer) }
   }
 
-  async release(sessionID: string): Promise<{ ok: true; interrupted: number; unreachable: string[] } | { ok: false; held?: SupervisorRef }> {
+  async release(
+    sessionID: string,
+  ): Promise<{ ok: true; interrupted: number; unreachable: string[] } | { ok: false; held?: SupervisorRef }> {
     const local = await this.state.supervisor()
     if (!local || local.host !== this.peers.self || local.sessionID !== sessionID) {
       return { ok: false, held: local }
@@ -61,7 +62,10 @@ export class Supervisor {
       const peer = this.peers.get(entry.host)
       if (!peer) continue
       try {
-        await peer.client.session.interrupt({ sessionID: entry.sessionID, resume: false }, { signal: AbortSignal.timeout(CLAIM_TIMEOUT) })
+        await peer.client.session.interrupt(
+          { sessionID: entry.sessionID, resume: false },
+          { signal: AbortSignal.timeout(CLAIM_TIMEOUT) },
+        )
         interrupted++
       } catch {}
     }
@@ -81,11 +85,19 @@ export class Supervisor {
     if (local && !same(local, input) && !input.force) {
       return { ok: false, held: local }
     }
-    await this.applyLocal({ host: input.host, sessionID: input.sessionID, claimedAt: input.claimedAt }, input.force ?? false)
+    await this.applyLocal(
+      { host: input.host, sessionID: input.sessionID, claimedAt: input.claimedAt },
+      input.force ?? false,
+    )
     return { ok: true }
   }
 
-  async status(): Promise<Array<{ peer: string; self: boolean; ok: true; supervisor?: SupervisorRef } | { peer: string; self: boolean; ok: false; error: string }>> {
+  async status(): Promise<
+    Array<
+      | { peer: string; self: boolean; ok: true; supervisor?: SupervisorRef }
+      | { peer: string; self: boolean; ok: false; error: string }
+    >
+  > {
     return Promise.all(
       this.peers.all.map(async (peer) => {
         try {
@@ -121,12 +133,17 @@ export class Supervisor {
           text: `[mesh] supervisor claim taken by ${ref.host}/${ref.sessionID}. This session is no longer the supervisor.`,
         })
         .catch(() => {})
-      await this.ctx.session.instructions.entry.remove({ sessionID: previous.sessionID, key: "mesh.identity" }).catch(() => {})
+      await this.ctx.session.instructions.entry
+        .remove({ sessionID: previous.sessionID, key: "mesh.identity" })
+        .catch(() => {})
     }
   }
 }
 
-export function same(a: Pick<SupervisorRef, "host" | "sessionID">, b: Pick<SupervisorRef, "host" | "sessionID">): boolean {
+export function same(
+  a: Pick<SupervisorRef, "host" | "sessionID">,
+  b: Pick<SupervisorRef, "host" | "sessionID">,
+): boolean {
   return a.host === b.host && a.sessionID === b.sessionID
 }
 

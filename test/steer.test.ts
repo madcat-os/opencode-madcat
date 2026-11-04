@@ -15,7 +15,11 @@ describe("messageID", () => {
 
 describe("supervisorAddress", () => {
   test("names the supervisor 'super'", () => {
-    expect(supervisorAddress({ host: "fuji", sessionID: "ses_x", claimedAt: 1 })).toEqual({ host: "fuji", sessionID: "ses_x", name: "super" })
+    expect(supervisorAddress({ host: "fuji", sessionID: "ses_x", claimedAt: 1 })).toEqual({
+      host: "fuji",
+      sessionID: "ses_x",
+      name: "super",
+    })
   })
 })
 

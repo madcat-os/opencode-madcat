@@ -57,7 +57,12 @@ export class Steer {
       throw new SteerError(`setting orders on ${input.host} failed: ${describe(error)}`)
     }
     if (input.prompt) {
-      await this.send(target, { from: supervisorAddress(supervisor), kind: "order", body: input.prompt, delivery: "queue" })
+      await this.send(target, {
+        from: supervisorAddress(supervisor),
+        kind: "order",
+        body: input.prompt,
+        delivery: "queue",
+      })
     }
     return target
   }
@@ -69,14 +74,24 @@ export class Steer {
     const peer = this.peer(target.host)
     const msgID = message.msgID ?? messageID()
     await peer.rpc.deliver(
-      { to: target.sessionID, from: message.from, msgID, kind: message.kind, body: message.body, delivery: message.delivery },
+      {
+        to: target.sessionID,
+        from: message.from,
+        msgID,
+        kind: message.kind,
+        body: message.body,
+        delivery: message.delivery,
+      },
       { signal: AbortSignal.timeout(TIMEOUT) },
     )
     return msgID
   }
 
   async note(target: Target, text: string): Promise<void> {
-    await this.peer(target.host).client.session.synthetic({ sessionID: target.sessionID, text }, { signal: AbortSignal.timeout(TIMEOUT) })
+    await this.peer(target.host).client.session.synthetic(
+      { sessionID: target.sessionID, text },
+      { signal: AbortSignal.timeout(TIMEOUT) },
+    )
   }
 
   async orders(target: Target, value: string | undefined): Promise<void> {
@@ -84,7 +99,10 @@ export class Steer {
     if (value === undefined) {
       await api.remove({ sessionID: target.sessionID, key: "mesh.orders" }, { signal: AbortSignal.timeout(TIMEOUT) })
     } else {
-      await api.put({ sessionID: target.sessionID, key: "mesh.orders", value }, { signal: AbortSignal.timeout(TIMEOUT) })
+      await api.put(
+        { sessionID: target.sessionID, key: "mesh.orders", value },
+        { signal: AbortSignal.timeout(TIMEOUT) },
+      )
     }
   }
 
@@ -97,11 +115,17 @@ export class Steer {
   }
 
   async wait(target: Target, timeout = WAIT_TIMEOUT): Promise<void> {
-    await this.peer(target.host).client.session.wait({ sessionID: target.sessionID }, { signal: AbortSignal.timeout(timeout) })
+    await this.peer(target.host).client.session.wait(
+      { sessionID: target.sessionID },
+      { signal: AbortSignal.timeout(timeout) },
+    )
   }
 
   async read(target: Target, tail: number): Promise<string> {
-    const messages = await this.peer(target.host).client.session.context({ sessionID: target.sessionID }, { signal: AbortSignal.timeout(TIMEOUT) })
+    const messages = await this.peer(target.host).client.session.context(
+      { sessionID: target.sessionID },
+      { signal: AbortSignal.timeout(TIMEOUT) },
+    )
     const lines: string[] = []
     for (const m of messages) {
       if (m.type === "user") lines.push(`[user] ${m.text}`)
@@ -120,7 +144,9 @@ export class Steer {
   async remove(target: Target): Promise<void> {
     const peer = this.peer(target.host)
     await peer.rpc.unregister({ sessionID: target.sessionID }, { signal: AbortSignal.timeout(TIMEOUT) }).catch(() => {})
-    await peer.client.session.remove({ sessionID: target.sessionID }, { signal: AbortSignal.timeout(TIMEOUT) }).catch(() => {})
+    await peer.client.session
+      .remove({ sessionID: target.sessionID }, { signal: AbortSignal.timeout(TIMEOUT) })
+      .catch(() => {})
   }
 }
 

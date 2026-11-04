@@ -19,10 +19,21 @@ describe("formatHosts", () => {
         self: false,
         url: "http://sin:4096",
         ok: true,
-        hello: { host: "sin", version: "0.0.1", workers: 1, supervisor: { host: "fuji", sessionID: "ses_x", claimedAt: 1 } },
+        hello: {
+          host: "sin",
+          version: "0.0.1",
+          workers: 1,
+          supervisor: { host: "fuji", sessionID: "ses_x", claimedAt: 1 },
+        },
         mismatch: true,
       },
-      { name: "forge", self: false, url: "http://forge:4096", ok: false, error: "rpc.unavailable: RPC is unavailable: mesh" },
+      {
+        name: "forge",
+        self: false,
+        url: "http://forge:4096",
+        ok: false,
+        error: "rpc.unavailable: RPC is unavailable: mesh",
+      },
     ])
     const lines = out.split("\n")
     expect(lines[0]).toBe(`● fuji (self)  v${VERSION} · no supervisor · 2 workers · dir /p`)

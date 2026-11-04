@@ -40,7 +40,10 @@ interface FakePeer {
   calls: string[]
 }
 
-function fakePeers(self: string, hosts: Record<string, Partial<FakePeer>>): { peers: Peers; fakes: Record<string, FakePeer> } {
+function fakePeers(
+  self: string,
+  hosts: Record<string, Partial<FakePeer>>,
+): { peers: Peers; fakes: Record<string, FakePeer> } {
   const fakes: Record<string, FakePeer> = {}
   for (const [name, opts] of Object.entries(hosts)) {
     fakes[name] = { name, self: name === self, up: true, workers: [], calls: [], ...opts }
@@ -144,7 +147,13 @@ describe("Observer.reconcile", () => {
     await state.setRoster("sin", "ses_gone", { name: "gone", directory: "/g", state: "busy", lastSeen: 0 })
     fakes.sin!.workers = [
       { sessionID: "ses_a", name: "a", directory: "/a", supervisor: me, state: "busy" },
-      { sessionID: "ses_b", name: "b", directory: "/b", supervisor: { host: "sin", sessionID: "ses_other", claimedAt: 2 }, state: "idle" },
+      {
+        sessionID: "ses_b",
+        name: "b",
+        directory: "/b",
+        supervisor: { host: "sin", sessionID: "ses_other", claimedAt: 2 },
+        state: "idle",
+      },
     ]
     await observer.reconcileAll(true)
     const roster = await state.roster()

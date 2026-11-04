@@ -88,7 +88,9 @@ export class Observer {
           if (!next) continue
           const sessionID = (event.data as { sessionID?: string }).sessionID
           if (!sessionID) continue
-          void this.observed(sessionID, next, event.created).catch((e) => console.warn(`[madcat] observe: ${describe(e)}`))
+          void this.observed(sessionID, next, event.created).catch((e) =>
+            console.warn(`[madcat] observe: ${describe(e)}`),
+          )
         }
       } catch (error) {
         if (this.controller.signal.aborted) return
@@ -102,7 +104,13 @@ export class Observer {
     const worker = await this.state.worker(sessionID)
     if (!worker) return
     if (next.removed) await this.state.removeWorker(sessionID)
-    await this.notify(worker.supervisor, { host: this.peers.self, sessionID, state: next.state, at, ...(next.removed ? { removed: true } : {}) })
+    await this.notify(worker.supervisor, {
+      host: this.peers.self,
+      sessionID,
+      state: next.state,
+      at,
+      ...(next.removed ? { removed: true } : {}),
+    })
   }
 
   /** Push one state change to the supervisor's host; local supervisor goes through the same RPC. */
@@ -120,7 +128,10 @@ export class Observer {
         await peer.rpc.notify(input, { signal: AbortSignal.timeout(TIMEOUT) })
         return true
       } catch (error) {
-        if (i === attempts.length - 1) console.warn(`[madcat] notify ${supervisor.host} failed after ${attempts.length} attempts: ${describe(error)}`)
+        if (i === attempts.length - 1)
+          console.warn(
+            `[madcat] notify ${supervisor.host} failed after ${attempts.length} attempts: ${describe(error)}`,
+          )
       }
     }
     return false

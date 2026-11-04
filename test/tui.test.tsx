@@ -18,7 +18,11 @@ function fake(options: { roster: RosterRow[]; whoami: Whoami; supervisorHere?: b
   const panels: string[] = []
   const sup = { host: "fuji", sessionID: "ses_super", claimedAt: 1 }
   const rpc = {
-    roster: async () => ({ host: "fuji", ...(options.supervisorHere === false ? {} : { supervisor: sup }), entries: options.roster }),
+    roster: async () => ({
+      host: "fuji",
+      ...(options.supervisorHere === false ? {} : { supervisor: sup }),
+      entries: options.roster,
+    }),
     whoami: async () => options.whoami,
     read: async () => ({ text: "[assistant] hello" }),
     events: {
@@ -31,12 +35,19 @@ function fake(options: { roster: RosterRow[]; whoami: Whoami; supervisorHere?: b
   const feedback = { base: c, muted: c }
   const context = {
     theme: {
-      text: { base: c, muted: c, faint: c, action: { primary: { base: c } }, feedback: { error: feedback, warning: feedback, success: feedback, info: feedback } },
+      text: {
+        base: c,
+        muted: c,
+        faint: c,
+        action: { primary: { base: c } },
+        feedback: { error: feedback, warning: feedback, success: feedback, info: feedback },
+      },
       background: { raised: { high: c } },
     },
     client: { rpc: () => rpc },
     ui: {
-      slot: (claim: { append: string; render: (input: any) => JSX.Element }) => void (slots[claim.append] ??= []).push(claim.render),
+      slot: (claim: { append: string; render: (input: any) => JSX.Element }) =>
+        void (slots[claim.append] ??= []).push(claim.render),
       toast: { show: (t: (typeof toasts)[number]) => void toasts.push(t) },
       panel: { open: (name: string) => (panels.push(name), true), close: () => {}, current: () => undefined },
       format: { path: (p: string) => p },
@@ -88,7 +99,13 @@ describe("tui", () => {
     const f = fake({ roster: [], whoami: { role: "none", host: "fuji", sessionID: "x" } })
     const cleanup = await plugin.setup(f.context)
     if (cleanup) cleanups.push(() => void cleanup())
-    expect(Object.keys(f.slots).toSorted()).toEqual(["app", "home.footer.status", "prompt.footer.status", "session.panel", "sidebar.content"])
+    expect(Object.keys(f.slots).toSorted()).toEqual([
+      "app",
+      "home.footer.status",
+      "prompt.footer.status",
+      "session.panel",
+      "sidebar.content",
+    ])
   })
 
   test("sidebar on the supervisor shows the roster, problems first, and a summary", async () => {
@@ -105,14 +122,25 @@ describe("tui", () => {
   })
 
   test("sidebar on a worker shows identity, on anything else a hint", async () => {
-    const w = fake({ roster: [], whoami: { role: "worker", host: "sin", sessionID: "ses_w", name: "reviewer", supervisor: { host: "fuji", sessionID: "ses_super", claimedAt: 1 } } })
+    const w = fake({
+      roster: [],
+      whoami: {
+        role: "worker",
+        host: "sin",
+        sessionID: "ses_w",
+        name: "reviewer",
+        supervisor: { host: "fuji", sessionID: "ses_super", claimedAt: 1 },
+      },
+    })
     const wf = (await mount(w, "sidebar.content", { sessionID: "ses_w" })).captureCharFrame()
     expect(wf).toContain("MESH worker · sin/reviewer")
     expect(wf).toContain("supervisor fuji/ses_super")
     while (cleanups.length) cleanups.pop()!()
 
     const n = fake({ roster: [], whoami: { role: "none", host: "fuji", sessionID: "x" } })
-    expect((await mount(n, "sidebar.content", { sessionID: "x" })).captureCharFrame()).toContain("not a mesh session · /super")
+    expect((await mount(n, "sidebar.content", { sessionID: "x" })).captureCharFrame()).toContain(
+      "not a mesh session · /super",
+    )
   })
 
   test("footer status shows counts only when the supervisor is on this host", async () => {
@@ -126,7 +154,16 @@ describe("tui", () => {
 
   test("panel renders the roster with directories and a transcript preview", async () => {
     const f = fake({ roster: rows, whoami: { role: "supervisor", host: "fuji", sessionID: "ses_super" } })
-    const panel = { name: "mesh.roster", sessionID: "ses_super", width: 80, presentation: "panel", focused: true, focus() {}, close() {}, toggleFullscreen() {} }
+    const panel = {
+      name: "mesh.roster",
+      sessionID: "ses_super",
+      width: 80,
+      presentation: "panel",
+      focused: true,
+      focus() {},
+      close() {},
+      toggleFullscreen() {},
+    }
     const frame = (await mount(f, "session.panel", panel, 80, 20)).captureCharFrame()
     expect(frame).toContain("supervisor fuji/ses_super")
     expect(frame).toContain("/p/a")
@@ -137,11 +174,31 @@ describe("tui", () => {
     const f = fake({ roster: rows, whoami: { role: "supervisor", host: "fuji", sessionID: "ses_super" } })
     const app = await mount(f, "sidebar.content", { sessionID: "ses_super" })
 
-    f.handlers.message!.forEach((h) => h({ data: { from: { host: "sin", sessionID: "ses_b", name: "reviewer" }, to: "ses_super", kind: "report", msgID: "msg_1" } }))
-    f.handlers.message!.forEach((h) => h({ data: { from: { host: "fuji", sessionID: "ses_super", name: "super" }, to: "ses_b", kind: "order", msgID: "msg_2" } }))
+    f.handlers.message!.forEach((h) =>
+      h({
+        data: {
+          from: { host: "sin", sessionID: "ses_b", name: "reviewer" },
+          to: "ses_super",
+          kind: "report",
+          msgID: "msg_1",
+        },
+      }),
+    )
+    f.handlers.message!.forEach((h) =>
+      h({
+        data: {
+          from: { host: "fuji", sessionID: "ses_super", name: "super" },
+          to: "ses_b",
+          kind: "order",
+          msgID: "msg_2",
+        },
+      }),
+    )
     expect(f.toasts.map((t) => t.title)).toEqual(["[sin/reviewer] report"])
 
-    f.handlers.roster!.forEach((h) => h({ data: { host: "fuji", sessionID: "ses_a", name: "indexer", state: "error" } }))
+    f.handlers.roster!.forEach((h) =>
+      h({ data: { host: "fuji", sessionID: "ses_a", name: "indexer", state: "error" } }),
+    )
     expect(f.toasts.at(-1)).toMatchObject({ variant: "error", message: "fuji/indexer is error" })
 
     f.handlers.roster!.forEach((h) => h({ data: { host: "sin", sessionID: "ses_b", removed: true } }))
