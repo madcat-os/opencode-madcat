@@ -1,0 +1,48 @@
+{
+  "name": "@madcat-os/opencode-madcat",
+  "version": "3.0.0-alpha.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./rpc": "./src/rpc.ts"
+  },
+  "files": [
+    "src/"
+  ],
+  "description": "OpenCode plugin for the MADCAT mesh — steer worker sessions on any host from one supervisor session.",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "madcat",
+    "mesh"
+  ],
+  "homepage": "https://github.com/madcat-os/opencode-madcat#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/madcat-os/opencode-madcat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/madcat-os/opencode-madcat/issues"
+  },
+  "license": "BUSL-1.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@opencode/client": "^2.0.26",
+    "@opencode/plugin": "^2.0.26",
+    "smol-toml": "^1.6.1",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.8"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": ">=2.0.26"
+  }
+}
