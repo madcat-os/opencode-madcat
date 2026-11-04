@@ -9,6 +9,7 @@ import { Mesh, type Hello, type SupervisorRef, type Whoami, type WorkerInfo, typ
 import { State, type RosterEntry } from "./state.ts"
 import { Steer, SteerError, supervisorAddress, type Target } from "./steer.ts"
 import { Supervisor, describe, same } from "./supervisor.ts"
+import { GLYPH, age } from "./view.ts"
 
 export const VERSION: string = pkg.version
 
@@ -46,18 +47,9 @@ export function formatHosts(statuses: HostStatus[]): string {
 
 export function formatRoster(entries: RosterEntry[], now = Date.now()): string {
   if (entries.length === 0) return "No workers in the roster."
-  const glyph: Record<WorkerState, string> = { busy: "●", idle: "○", spawning: "◌", done: "✓", error: "✗", lost: "?" }
   return entries
-    .map((e) => `${glyph[e.state]} ${e.host}/${e.name}  ${e.state}  ${age(now - e.lastSeen)}  ${e.sessionID}  ${e.directory}`)
+    .map((e) => `${GLYPH[e.state]} ${e.host}/${e.name}  ${e.state}  ${age(now - e.lastSeen)}  ${e.sessionID}  ${e.directory}`)
     .join("\n")
-}
-
-function age(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.round(s / 60)
-  if (m < 60) return `${m}m`
-  return `${Math.round(m / 60)}h`
 }
 
 export function isNotFound(error: unknown): boolean {
@@ -232,6 +224,24 @@ export default Plugin.define({
         if (!me || me.host !== peers.self) return { known: false }
         const known = await applyRoster(input.host, input.sessionID, input.removed ? { removed: true } : { state: input.state })
         return { known }
+      },
+
+      async roster({ refresh }) {
+        const sup = await state.supervisor()
+        if (!sup || sup.host !== peers.self) return { host: peers.self, ...(sup ? { supervisor: sup } : {}), entries: [] }
+        if (refresh) await observer.reconcileAll(true)
+        return { host: peers.self, supervisor: sup, entries: await state.roster() }
+      },
+
+      async read({ host, sessionID, tail }, { error }) {
+        const sup = await state.supervisor()
+        const entry = sup?.host === peers.self ? await state.rosterEntry(host, sessionID) : undefined
+        if (!entry) return error("unauthorized", `${host}/${sessionID} is not in this host's roster`, { reason: "not-in-roster" })
+        try {
+          return { text: await steer.read({ host, sessionID }, tail ?? 50) }
+        } catch (cause) {
+          return { text: `(transcript unavailable: ${describe(cause)})` }
+        }
       },
 
       async deliver(input, { error }) {

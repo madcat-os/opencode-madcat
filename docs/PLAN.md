@@ -541,8 +541,9 @@ A compact indicator on the home screen and the prompt footer:
 MESH 4 ●2 ○1 ✗1
 ```
 
-Clicking or `ctrl+m` opens the panel below. Hidden entirely when no
-supervisor is known to this host.
+Clicking it opens the panel below. Hidden entirely when this host does not
+hold the supervisor. (No default key: `ctrl+m` is carriage return in most
+terminals and would shadow Enter; users can bind `mesh.roster` themselves.)
 
 ### Panel: `session.panel` named `mesh.roster`
 
@@ -562,9 +563,11 @@ Subscribe to `message` and `roster.changed`:
 ### What it needs from the server part
 
 - `mesh.whoami({ sessionID })` → `{ role, host, name?, supervisor? }`
-- `mesh.roster()` → roster rows, fanning out `mesh.list` to peers if asked
-  with `refresh: true`
-- `mesh.read({ sessionID, tail })` → transcript tail, local or remote
+- `mesh.roster({ refresh? })` → `{ host, supervisor?, entries }`; entries are
+  empty unless this host holds the supervisor; `refresh` runs
+  `reconcileAll(true)` first
+- `mesh.read({ host, sessionID, tail? })` → `{ text }`, local or remote; only
+  for sessions in this host's roster (`unauthorized` otherwise)
 - The four events above
 
 All of these are already in the RPC contract or are thin wrappers over the
@@ -614,6 +617,8 @@ All open questions are resolved. In addition to the table at the top:
 | Roster writes | `applyRoster` in `index.ts` is the only writer; `Steer` never touches `roster/*`. |
 | Tool gating | `options.permission` groups `mesh.super` / `mesh.worker` / `mesh.common`, denied per agent; non-mesh agents deny `mesh.*`. Storage re-check at execute time. |
 | Worker → supervisor | `mesh_report` / `mesh_ask` are `delivery: steer`; the target is `workers/<me>.supervisor`, never an argument. |
+| TUI layout | `src/tui.tsx` (Solid/OpenTUI) on top of pure `src/view.ts` (glyphs, tones, sort, counts, footer text). Rows sort problems first. Panel keys: ↑↓/jk, enter, r, f, esc. |
+| TUI tests | `bun test --conditions=browser` so `solid-js` resolves to its reactive build; OpenTUI `testRender` via `@opentui/solid/preload` in `bunfig.toml`. |
 | Liveness | `hello` every 30s on roster hosts, `lost` after 3 failures, `list` reconcile on recovery; startup/refresh reconcile all peers. |
 
 ## Phases (proposed)

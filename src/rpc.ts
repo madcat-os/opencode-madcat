@@ -55,6 +55,23 @@ export const Whoami = z.object({
 })
 export type Whoami = z.infer<typeof Whoami>
 
+export const RosterRow = z.object({
+  host: z.string(),
+  sessionID: z.string(),
+  name: z.string(),
+  directory: z.string(),
+  state: WorkerState,
+  lastSeen: z.number(),
+})
+export type RosterRow = z.infer<typeof RosterRow>
+
+export const RosterView = z.object({
+  host: z.string().describe("the host answering"),
+  supervisor: SupervisorRef.optional(),
+  entries: z.array(RosterRow).describe("empty unless the supervisor lives on this host"),
+})
+export type RosterView = z.infer<typeof RosterView>
+
 export const MessageKind = z.enum(["order", "ask", "report", "answer"])
 export type MessageKind = z.infer<typeof MessageKind>
 
@@ -122,6 +139,19 @@ export const Mesh = Rpc.define({
         removed: z.boolean().optional().describe("the session was deleted on its host"),
       }),
       output: z.object({ known: z.boolean() }),
+    },
+    roster: {
+      input: z.object({ refresh: z.boolean().optional().describe("re-query every peer first") }),
+      output: RosterView,
+    },
+    read: {
+      input: z.object({
+        host: z.string(),
+        sessionID: z.string(),
+        tail: z.number().int().positive().optional(),
+      }),
+      output: z.object({ text: z.string() }),
+      errors: { unauthorized: z.object({ reason: z.string() }) },
     },
     deliver: {
       input: DeliverInput,
