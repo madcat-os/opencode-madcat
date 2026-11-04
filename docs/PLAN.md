@@ -192,7 +192,7 @@ sender plugin                          receiver plugin
 ─────────────                          ───────────────
 mesh.deliver({to, from, msgID,  ───▶   authorize(from, to)
   kind, body, delivery})               nonce = random()
-                                       pending[nonce] = { from, kind, msgID }
+                                       storage nonce/<nonce> = { from, kind, msgID, createdAt }
                                        ctx.session.prompt({
                                          sessionID: to,
                                          id: msgID,            ← idempotent
@@ -201,8 +201,8 @@ mesh.deliver({to, from, msgID,  ───▶   authorize(from, to)
                                          metadata: { mesh: { nonce } },
                                        })
                                        ─── prompt hook fires ───
-                                       pending[nonce]?  → banner, delete
-                                       inbox/<msgID> = { … }
+                                       take nonce/<nonce>?  → banner, delete
+                                       (inbox/* log: deferred)
                                  ◀───  { delivered: true }
 ```
 
@@ -224,15 +224,16 @@ A plugin cannot attest sender identity (#58367). Mitigations:
 
 - The banner `[mesh from <host>/<name>]` is added by the receiving plugin's
   `session.hook("prompt")` **only** when `metadata.mesh.nonce` matches an
-  entry the same plugin process minted moments earlier in `mesh.deliver`.
-  Nonces are single-use and in-memory. A prompt arriving any other way, with
-  or without a `metadata.mesh` field, gets no banner and is treated as plain
+  entry minted moments earlier in `mesh.deliver`. Nonces are single-use and
+  expire after `NONCE_TTL` (5 min). A prompt arriving any other way, with or
+  without a `metadata.mesh` field, gets no banner and is treated as plain
   user input.
-- The nonce map does not survive a plugin restart on the receiving host. A
-  `deliver` that races the restart admits the prompt but loses its banner.
-  This is accepted: it is rare, the receiving agent sees an unbannered
-  message and treats it as untrusted, and the sender can resend. No storage
-  round-trip per message.
+- Nonces live in `ctx.storage` (`nonce/<nonce>`), not in memory. The plugin
+  is instantiated once per location, and the RPC handler (any instance) and
+  the target session's prompt hook (the instance for the session's
+  directory) are in general different instances with separate memory; the
+  storage is shared. Verified on 2.2.5: an in-memory map never matched.
+  Cost is one storage write + one read/remove per message.
 - `mesh.deliver` itself is reachable only with the host's Basic password,
   and it checks `from`/`to` against local storage as above. The trust
   boundary is therefore "holds a mesh password" = "is a mesh plugin". That
@@ -580,7 +581,9 @@ All open questions are resolved. In addition to the table at the top:
 | Question | Decision |
 |---|---|
 | Worker directory | Per-host `directory` default in config; `mesh_spawn` argument overrides. |
-| Nonce durability | In-memory only. A restart race loses the banner; accepted. |
+| Nonce durability | In `ctx.storage` with a 5-minute TTL; the plugin runs one instance per location, so memory is not shared between `deliver` and the prompt hook. |
+| Message ids | `mesh.deliver.msgID` must start with `msg_` (server rejects others); `Steer.send` mints `msg_<hex ms><16 hex random>` so ids sort by time. |
+| Client API shape | In the plugin, `peer.client.session.wait` and `peer.client.session.instructions.entry.*` live under `session`, not `experimental.session` (the latter only exists in the npm build). |
 | `--release` and running workers | Interrupt every worker (`resume: false`), keep sessions and roster. |
 | Claim conflicts after partition | Best effort: fail on reachable `held`, skip unreachable, show disagreement in `--status` and the TUI, human resolves with `--force`. |
 | Plugin version mismatch | Warn, mark the peer, keep calling. |

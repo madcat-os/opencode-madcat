@@ -55,6 +55,29 @@ export const Whoami = z.object({
 })
 export type Whoami = z.infer<typeof Whoami>
 
+export const MessageKind = z.enum(["order", "ask", "report", "answer"])
+export type MessageKind = z.infer<typeof MessageKind>
+
+export const Delivery = z.enum(["steer", "queue"])
+export type Delivery = z.infer<typeof Delivery>
+
+export const MeshAddress = z.object({
+  host: z.string(),
+  sessionID: z.string(),
+  name: z.string(),
+})
+export type MeshAddress = z.infer<typeof MeshAddress>
+
+export const DeliverInput = z.object({
+  to: z.string().describe("target sessionID on the receiving host"),
+  from: MeshAddress,
+  msgID: z.string().startsWith("msg_").describe("session message id; becomes the inbox id on the receiving host"),
+  kind: MessageKind,
+  body: z.string(),
+  delivery: Delivery,
+})
+export type DeliverInput = z.infer<typeof DeliverInput>
+
 export const Mesh = Rpc.define({
   id: "mesh",
   methods: {
@@ -90,6 +113,14 @@ export const Mesh = Rpc.define({
       input: z.object({ sessionID: z.string() }),
       output: Whoami,
     },
+    deliver: {
+      input: DeliverInput,
+      output: z.object({ delivered: z.boolean() }),
+      errors: {
+        unauthorized: z.object({ reason: z.string() }),
+        no_session: z.object({ sessionID: z.string() }),
+      },
+    },
   },
   events: {
     supervisor: {
@@ -112,6 +143,14 @@ export const Mesh = Rpc.define({
         name: z.string().optional(),
         state: WorkerState.optional(),
         removed: z.boolean().optional(),
+      }),
+    },
+    message: {
+      schema: z.object({
+        from: MeshAddress,
+        to: z.string(),
+        kind: MessageKind,
+        msgID: z.string(),
       }),
     },
   },

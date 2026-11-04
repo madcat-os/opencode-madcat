@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import type { SupervisorRef, WorkerState } from "./rpc.ts"
+import type { MeshAddress, MessageKind, SupervisorRef, WorkerState } from "./rpc.ts"
 
 type StorageDomain = Plugin.Context["storage"]
 type Json = Parameters<StorageDomain["set"]>[1]
@@ -23,11 +23,22 @@ export interface RosterEntry extends RosterRecord {
   sessionID: string
 }
 
+export interface NonceRecord {
+  from: MeshAddress
+  kind: MessageKind
+  msgID: string
+  createdAt: number
+}
+
 const KEY = {
   supervisor: "supervisor",
   workers: "workers/",
   roster: "roster/",
+  nonce: "nonce/",
 } as const
+
+/** Nonces older than this are garbage; a prompt that waited longer than this is not a delivery in flight. */
+export const NONCE_TTL = 5 * 60_000
 
 export class State {
   constructor(private readonly storage: StorageDomain) {}
@@ -85,5 +96,30 @@ export class State {
 
   async removeRoster(host: string, id: string): Promise<void> {
     await this.storage.remove(`${KEY.roster}${host}/${id}`)
+  }
+
+  async setNonce(nonce: string, record: NonceRecord): Promise<void> {
+    await this.write(KEY.nonce + nonce, record)
+  }
+
+  /** Reads and removes the nonce in one go; a nonce is single-use. */
+  async takeNonce(nonce: string, now = Date.now()): Promise<NonceRecord | undefined> {
+    const record = await this.read<NonceRecord>(KEY.nonce + nonce)
+    if (!record) return undefined
+    await this.storage.remove(KEY.nonce + nonce)
+    return now - record.createdAt > NONCE_TTL ? undefined : record
+  }
+
+  async pruneNonces(now = Date.now()): Promise<number> {
+    const { entries } = await this.storage.scan({ prefix: KEY.nonce })
+    let pruned = 0
+    for (const e of entries) {
+      const record = e.value as unknown as NonceRecord
+      if (now - record.createdAt > NONCE_TTL) {
+        await this.storage.remove(e.key)
+        pruned++
+      }
+    }
+    return pruned
   }
 }

@@ -6,7 +6,8 @@ import { ConfigError, loadMesh } from "./config.ts"
 import { Peers, type Peer } from "./mesh.ts"
 import { Mesh, type Hello, type SupervisorRef, type Whoami, type WorkerInfo, type WorkerState } from "./rpc.ts"
 import { State, type RosterEntry } from "./state.ts"
-import { Supervisor, describe } from "./supervisor.ts"
+import { Steer, SteerError, supervisorAddress, type Target } from "./steer.ts"
+import { Supervisor, describe, same } from "./supervisor.ts"
 
 export const VERSION: string = pkg.version
 
@@ -58,6 +59,12 @@ function age(ms: number): string {
   return `${Math.round(m / 60)}h`
 }
 
+export function isNotFound(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const e = error as { _tag?: unknown; name?: unknown; type?: unknown }
+  return e._tag === "SessionNotFoundError" || e.name === "SessionNotFoundError" || e.type === "no_session"
+}
+
 function parseFlags(text: string): Set<string> {
   return new Set(text.split(/\s+/).filter((w) => w.startsWith("--")).map((w) => w.slice(2)))
 }
@@ -78,8 +85,39 @@ export default Plugin.define({
 
     const state = new State(ctx.storage)
     const supervisor = new Supervisor(ctx, peers, state)
+    const steer = new Steer(peers, state)
 
     const note = (sessionID: string, text: string) => ctx.session.synthetic({ sessionID, text: `[mesh] ${text}` }).catch(() => {})
+
+    // Nonces are minted by deliver() and consumed by the prompt hook. The plugin is instantiated once per
+    // location, and the RPC handler and the target session's hook may run in different instances, so the
+    // nonce lives in storage (shared across instances), not in memory.
+    await ctx.session.hook("prompt", async (event) => {
+      const mesh = event.metadata?.mesh
+      const nonce = mesh && typeof mesh === "object" && "nonce" in mesh ? (mesh as { nonce?: unknown }).nonce : undefined
+      if (typeof nonce !== "string") return
+      const entry = await state.takeNonce(nonce)
+      if (!entry) return
+      event.prompt.text = `[mesh from ${entry.from.host}/${entry.from.name}] (${entry.kind})\n${event.prompt.text}`
+      event.metadata = { ...event.metadata, mesh: { from: entry.from, kind: entry.kind, msgID: entry.msgID } }
+    })
+
+    /** Resolve "host/name", "name" (self), or a bare session id against the roster. */
+    const resolve = async (ref: string): Promise<(Target & { name: string }) | undefined> => {
+      const roster = await state.roster()
+      const slash = ref.indexOf("/")
+      const host = slash > 0 ? ref.slice(0, slash) : undefined
+      const key = slash > 0 ? ref.slice(slash + 1) : ref
+      return roster.find((e) => (host ? e.host === host : true) && (e.name === key || e.sessionID === key))
+    }
+
+    const requireSupervisor = async (sessionID: string): Promise<SupervisorRef | string> => {
+      const ref = await state.supervisor()
+      if (!ref || ref.host !== peers.self || ref.sessionID !== sessionID) {
+        return "This session is not the supervisor. Run /super to claim it."
+      }
+      return ref
+    }
 
     const stateOf = async (sessionID: string, active?: Record<string, unknown>): Promise<WorkerState> => {
       try {
@@ -161,6 +199,43 @@ export default Plugin.define({
 
       async whoami({ sessionID }) {
         return whoami(sessionID)
+      },
+
+      async deliver(input, { error }) {
+        const sup = await state.supervisor()
+        const worker = await state.worker(input.to)
+        if (worker) {
+          if (!same(worker.supervisor, input.from)) {
+            return error("unauthorized", `only the supervisor ${worker.supervisor.host}/${worker.supervisor.sessionID} may message worker ${worker.name}`, {
+              reason: "not-supervisor",
+            })
+          }
+        } else if (sup && sup.host === peers.self && sup.sessionID === input.to) {
+          const known = await state.rosterEntry(input.from.host, input.from.sessionID)
+          if (!known) {
+            return error("unauthorized", `${input.from.host}/${input.from.sessionID} is not a worker in the supervisor's roster`, { reason: "not-in-roster" })
+          }
+        } else {
+          return error("unauthorized", `session ${input.to} is neither a mesh worker nor the supervisor on ${peers.self}`, { reason: "not-mesh-session" })
+        }
+
+        const nonce = crypto.randomUUID()
+        await state.setNonce(nonce, { from: input.from, kind: input.kind, msgID: input.msgID, createdAt: Date.now() })
+        try {
+          await ctx.session.prompt({
+            sessionID: input.to,
+            id: input.msgID,
+            text: input.body,
+            delivery: input.delivery,
+            metadata: { mesh: { nonce } },
+          })
+        } catch (cause) {
+          await state.takeNonce(nonce)
+          if (isNotFound(cause)) return error("no_session", `session ${input.to} does not exist on ${peers.self}`, { sessionID: input.to })
+          throw cause
+        }
+        await rpc.events.emit("message", { from: input.from, to: input.to, kind: input.kind, msgID: input.msgID })
+        return { delivered: true }
       },
     })
 
@@ -266,6 +341,161 @@ export default Plugin.define({
           if (input.state) entries = entries.filter((e) => e.state === input.state)
           return { content: formatRoster(entries) }
         },
+      })
+
+      // --- steering tools (supervisor only) ---
+
+      const target = async (ref: string) => {
+        const found = await resolve(ref)
+        if (!found) throw new SteerError(`no worker "${ref}" in the roster. Use host/name, name, or a session id; mesh_sessions lists them.`)
+        return found
+      }
+
+      const run = async (sessionID: string, fn: (sup: SupervisorRef) => Promise<string>) => {
+        const sup = await requireSupervisor(sessionID)
+        if (typeof sup === "string") return { content: sup }
+        try {
+          return { content: await fn(sup) }
+        } catch (error) {
+          if (error instanceof SteerError) return { content: `error: ${error.message}` }
+          return { content: `error: ${describe(error)}` }
+        }
+      }
+
+      editor.add({
+        name: "spawn",
+        description:
+          "Create a mesh worker session on a host and give it standing orders. host defaults to this host; directory defaults to the host's configured default. Returns the worker's mesh address. Optional prompt is queued as the first order.",
+        input: z.object({
+          name: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/).describe("short unique worker name on that host"),
+          orders: z.string().describe("the brief: goal, boundaries, definition of done, what to report"),
+          host: z.string().optional().describe("mesh host name; defaults to self"),
+          directory: z.string().optional().describe("absolute working directory; defaults to the host's default"),
+          prompt: z.string().optional().describe("first message to the worker, queued after spawn"),
+        }),
+        options: { namespace: "mesh" },
+        execute: (input, context) =>
+          run(context.sessionID, async (sup) => {
+            const host = input.host ?? peers.self
+            const peer = peers.get(host)
+            if (!peer) throw new SteerError(`unknown host "${host}"`)
+            const directory = input.directory ?? peer.directory
+            if (!directory) throw new SteerError(`host ${host} has no default directory; pass one`)
+            if (await resolve(`${host}/${input.name}`)) throw new SteerError(`worker ${host}/${input.name} already exists`)
+            const t = await steer.spawn(sup, { host, name: input.name, directory, orders: input.orders, prompt: input.prompt })
+            await rpc.events.emit("roster", { host, sessionID: t.sessionID, name: input.name, state: "spawning" })
+            return `spawned ${host}/${input.name} (${t.sessionID}) in ${directory}${input.prompt ? "; first order queued" : ""}`
+          }),
+      })
+
+      editor.add({
+        name: "send",
+        description:
+          "Send a message to a worker. kind 'order' directs it, 'ask' requests information, 'answer' replies to its ask. delivery 'steer' interrupts the current step; 'queue' waits until the worker is idle.",
+        input: z.object({
+          to: z.string().describe("worker as host/name, name, or session id"),
+          text: z.string(),
+          kind: z.enum(["order", "ask", "answer"]).optional().describe("default order"),
+          delivery: z.enum(["steer", "queue"]).optional().describe("default steer"),
+        }),
+        options: { namespace: "mesh" },
+        execute: (input, context) =>
+          run(context.sessionID, async (sup) => {
+            const t = await target(input.to)
+            const msgID = await steer.send(t, {
+              from: supervisorAddress(sup),
+              kind: input.kind ?? "order",
+              body: input.text,
+              delivery: input.delivery ?? "steer",
+            })
+            return `delivered ${input.kind ?? "order"} to ${t.host}/${t.name} (${input.delivery ?? "steer"}, id ${msgID})`
+          }),
+      })
+
+      editor.add({
+        name: "orders",
+        description: "Replace a worker's standing orders (its mesh.orders context block), or remove them. The worker sees the change at its next step without being interrupted.",
+        input: z.object({
+          to: z.string().describe("worker as host/name, name, or session id"),
+          value: z.string().optional().describe("new orders; omit together with remove=true to clear"),
+          remove: z.boolean().optional(),
+        }),
+        options: { namespace: "mesh" },
+        execute: (input, context) =>
+          run(context.sessionID, async () => {
+            const t = await target(input.to)
+            if (input.remove) {
+              await steer.orders(t, undefined)
+              return `orders removed from ${t.host}/${t.name}`
+            }
+            if (input.value === undefined) throw new SteerError("pass value, or remove=true")
+            await steer.orders(t, input.value)
+            return `orders updated for ${t.host}/${t.name}`
+          }),
+      })
+
+      editor.add({
+        name: "read",
+        description: "Read the tail of a worker's transcript: user turns, assistant text, and tool calls.",
+        input: z.object({
+          to: z.string().describe("worker as host/name, name, or session id"),
+          tail: z.number().int().positive().optional().describe("number of lines from the end; default 50"),
+        }),
+        options: { namespace: "mesh" },
+        execute: (input, context) =>
+          run(context.sessionID, async () => {
+            const t = await target(input.to)
+            return `transcript of ${t.host}/${t.name} (${t.sessionID}):\n${await steer.read(t, input.tail ?? 50)}`
+          }),
+      })
+
+      editor.add({
+        name: "interrupt",
+        description: "Stop a worker's current turn. resume=true lets it continue after handling queued messages; default false.",
+        input: z.object({
+          to: z.string().describe("worker as host/name, name, or session id"),
+          resume: z.boolean().optional(),
+        }),
+        options: { namespace: "mesh" },
+        execute: (input, context) =>
+          run(context.sessionID, async () => {
+            const t = await target(input.to)
+            const did = await steer.interrupt(t, input.resume ?? false)
+            return did ? `interrupted ${t.host}/${t.name}${input.resume ? " (will resume)" : ""}` : `${t.host}/${t.name} was not running`
+          }),
+      })
+
+      editor.add({
+        name: "wait",
+        description: "Block until a worker is idle (up to 30 minutes). Prefer waiting for its report; use this when you need the result synchronously.",
+        input: z.object({
+          to: z.string().describe("worker as host/name, name, or session id"),
+          timeout: z.number().int().positive().optional().describe("seconds; default 1800"),
+        }),
+        options: { namespace: "mesh" },
+        execute: (input, context) =>
+          run(context.sessionID, async () => {
+            const t = await target(input.to)
+            const started = Date.now()
+            await steer.wait(t, input.timeout ? input.timeout * 1000 : undefined)
+            return `${t.host}/${t.name} is idle (waited ${age(Date.now() - started)})`
+          }),
+      })
+
+      editor.add({
+        name: "remove",
+        description: "End a worker: unregister it, delete its session, and drop it from the roster.",
+        input: z.object({
+          to: z.string().describe("worker as host/name, name, or session id"),
+        }),
+        options: { namespace: "mesh" },
+        execute: (input, context) =>
+          run(context.sessionID, async () => {
+            const t = await target(input.to)
+            await steer.remove(t)
+            await rpc.events.emit("roster", { host: t.host, sessionID: t.sessionID, removed: true })
+            return `removed ${t.host}/${t.name} (${t.sessionID})`
+          }),
       })
     })
 
