@@ -10,7 +10,7 @@
   "files": [
     "src/"
   ],
-  "description": "OpenCode plugin for the MADCAT mesh \u2014 steer worker sessions on any host from one supervisor session.",
+  "description": "OpenCode plugin for the MADCAT mesh — steer worker sessions on any host from one supervisor session.",
   "keywords": [
     "opencode",
     "opencode-plugin",
@@ -31,7 +31,11 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test --conditions=browser"
+    "test": "bun test --conditions=browser",
+    "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test"
   },
   "dependencies": {
     "@opencode/client": "^2.2.5",
@@ -44,6 +48,8 @@
     "@opentui/core": "0.8.1",
     "@opentui/solid": "0.8.1",
     "@types/bun": "latest",
+    "oxlint": "1.91.0",
+    "prettier": "3.9.10",
     "solid-js": "1.9.17",
     "typescript": "^5.8"
   },
@@ -52,5 +58,9 @@
     "@opentui/core": ">=0.8.0",
     "@opentui/solid": ">=0.8.0",
     "solid-js": ">=1.9.0"
+  },
+  "prettier": {
+    "semi": false,
+    "printWidth": 120
   }
 }

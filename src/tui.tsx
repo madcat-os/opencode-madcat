@@ -10,7 +10,6 @@ const PANEL = "mesh.roster"
 const TICK = 5_000
 
 type Context = Plugin.Context
-type MeshClient = ReturnType<Context["client"]["rpc"]>
 
 /**
  * Shared, reactive mesh view for one TUI. Loaded from `mesh.roster` and kept fresh by the
@@ -307,11 +306,11 @@ export default Plugin.define({
   id: "madcat.tui",
   setup(context) {
     const { store, dispose } = createRoot((disposeRoot) => {
-      const store = createMeshStore(context)
+      const mesh = createMeshStore(context)
       return {
-        store,
+        store: mesh,
         dispose: () => {
-          store.dispose()
+          mesh.dispose()
           disposeRoot()
         },
       }

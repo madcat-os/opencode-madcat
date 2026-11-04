@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "promise"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "env": {
+    "builtin": true,
+    "es2024": true
+  },
+  "ignorePatterns": ["node_modules", "docs"],
+  "overrides": [
+    {
+      "files": ["src/index.ts"],
+      "rules": {
+        "unicorn/consistent-function-scoping": "off"
+      }
+    },
+    {
+      "files": ["test/**"],
+      "rules": {
+        "typescript/no-explicit-any": "off"
+      }
+    }
+  ],
+  "rules": {
+    "no-await-in-loop": "off",
+    "oxc/no-map-spread": "off",
+    "no-underscore-dangle": [
+      "warn",
+      {
+        "allow": ["_tag"]
+      }
+    ]
+  }
+}

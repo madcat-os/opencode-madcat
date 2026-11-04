@@ -34,7 +34,7 @@ const ORDER: Record<WorkerState, number> = { error: 0, lost: 1, busy: 2, spawnin
 
 /** Problems first, then busy, then the rest; stable by host/name within a state. */
 export function sortRows<T extends Pick<RosterRow, "host" | "name" | "state">>(rows: readonly T[]): T[] {
-  return [...rows].sort((a, b) => ORDER[a.state] - ORDER[b.state] || `${a.host}/${a.name}`.localeCompare(`${b.host}/${b.name}`))
+  return rows.toSorted((a, b) => ORDER[a.state] - ORDER[b.state] || `${a.host}/${a.name}`.localeCompare(`${b.host}/${b.name}`))
 }
 
 export interface Counts {
@@ -65,8 +65,9 @@ export function footer(c: Counts): string {
 }
 
 /** `3 hosts · 4 workers · 1 lost` */
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`
+
 export function summary(c: Counts): string {
-  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`
   const parts = [plural(c.hosts, "host"), plural(c.total, "worker")]
   if (c.bad) parts.push(`${c.bad} need attention`)
   return parts.join(" · ")

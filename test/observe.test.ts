@@ -148,7 +148,7 @@ describe("Observer.reconcile", () => {
     ]
     await observer.reconcileAll(true)
     const roster = await state.roster()
-    expect(roster.map((e) => `${e.host}/${e.name}:${e.state}`).sort()).toEqual(["sin/a:busy"])
+    expect(roster.map((e) => `${e.host}/${e.name}:${e.state}`).toSorted()).toEqual(["sin/a:busy"])
   })
 
   test("an unreachable host marks its entries lost", async () => {

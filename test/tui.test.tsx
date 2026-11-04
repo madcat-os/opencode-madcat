@@ -88,7 +88,7 @@ describe("tui", () => {
     const f = fake({ roster: [], whoami: { role: "none", host: "fuji", sessionID: "x" } })
     const cleanup = await plugin.setup(f.context)
     if (cleanup) cleanups.push(() => void cleanup())
-    expect(Object.keys(f.slots).sort()).toEqual(["app", "home.footer.status", "prompt.footer.status", "session.panel", "sidebar.content"])
+    expect(Object.keys(f.slots).toSorted()).toEqual(["app", "home.footer.status", "prompt.footer.status", "session.panel", "sidebar.content"])
   })
 
   test("sidebar on the supervisor shows the roster, problems first, and a summary", async () => {
