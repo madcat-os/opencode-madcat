@@ -73,7 +73,7 @@ inbox/<msgID>              { from, to, kind, deliveredAt }        receiver's hos
   of truth. Trimmed to the last N entries.
 
 Each session also carries its own identity in an `instructions.entry` key
-`mesh/identity` (`{ role, name, host, supervisor }`), so the agent can see it
+`mesh.identity` (`{ role, name, host, supervisor }`), so the agent can see it
 and it survives with the session regardless of plugin storage.
 
 ## Identity: supervisor and workers
@@ -94,7 +94,7 @@ it from any session on any host with `/super`.
    old supervisor session if it is local.
 3. If any reachable peer replied `held`, roll back and fail. Unreachable
    peers are skipped; they learn the claim from `mesh.hello` on next contact.
-4. Write local `supervisor`, `switchAgent("super")`, put `mesh/identity`,
+4. Write local `supervisor`, `switchAgent("super")`, put `mesh.identity`,
    inject a synthetic confirmation.
 
 `/super --release`:
@@ -171,10 +171,10 @@ for registration, delivery, and notification.
 
 | Primitive | Backing calls | Notes |
 |---|---|---|
-| `spawn(host, { name, directory, orders })` | `session.create({ agent: "worker", directory })` → `mesh.register({ sessionID, name, supervisor })` on that host → `instructions.entry.put("mesh/identity")` + `put("mesh/orders")` → write `roster/*` → `prompt(initial)` | Fire-and-forget. Returns mesh id immediately. `host` defaults to self. |
+| `spawn(host, { name, directory, orders })` | `session.create({ agent: "worker", directory })` → `mesh.register({ sessionID, name, supervisor })` on that host → `instructions.entry.put("mesh.identity")` + `put("mesh.orders")` → write `roster/*` → `prompt(initial)` | Fire-and-forget. Returns mesh id immediately. `host` defaults to self. |
 | `send(target, text, { kind, delivery })` | `mesh.deliver({ to, from, msgID, kind, body, delivery })` on the target's host | See *Messaging*. `msgID` = ULID; idempotent on retry. |
 | `note(target, text)` | `session.synthetic` | Inject without triggering a turn. |
-| `orders(target, value)` | `session.instructions.entry.put({ key: "mesh/orders" })` | Standing orders; announced at next step boundary, no turn consumed. |
+| `orders(target, value)` | `session.instructions.entry.put({ key: "mesh.orders" })` | Standing orders; announced at next step boundary, no turn consumed. |
 | `interrupt(target, { resume })` | `session.interrupt` | |
 | `wait(target)` | `session.wait` | Remote: long HTTP call; set generous `AbortSignal.timeout`. |
 | `read(target, { tail })` | `session.context` | Supervisor reads worker transcript. |
@@ -305,7 +305,7 @@ not `task` children.
 
 Per-session dynamic state (own name, supervisor location, standing orders) is
 **not** baked into the system prompt. It arrives through `instructions.entry`
-keys the plugin maintains (`mesh/identity`, `mesh/orders`), which render as
+keys the plugin maintains (`mesh.identity`, `mesh.orders`), which render as
 `<context key="…">` blocks and update at step boundaries without a turn.
 
 ### `super` — system prompt
@@ -374,7 +374,7 @@ one unit of work. The supervisor may be on this host or another; it makes no
 difference to you. The supervisor is your only point of contact; the human
 user is talking to the supervisor, not to you.
 
-Your brief is in the `mesh/orders` context block. It is the source of truth for
+Your brief is in the `mesh.orders` context block. It is the source of truth for
 what you should do, what you must not touch, and what "done" means. It can be
 updated while you work; the newest version wins.
 

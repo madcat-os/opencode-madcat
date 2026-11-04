@@ -1,19 +1,22 @@
 import { Plugin } from "@opencode/plugin"
 import { z } from "zod"
 import pkg from "../package.json" with { type: "json" }
+import { registerAgents } from "./agents.ts"
 import { ConfigError, loadMesh } from "./config.ts"
 import { Peers, type Peer } from "./mesh.ts"
-import { Mesh, type Hello } from "./rpc.ts"
+import { Mesh, type Hello, type SupervisorRef, type Whoami, type WorkerInfo, type WorkerState } from "./rpc.ts"
+import { State, type RosterEntry } from "./state.ts"
+import { Supervisor, describe } from "./supervisor.ts"
 
 export const VERSION: string = pkg.version
 
-const HELLO_TIMEOUT = 5_000
+const TIMEOUT = 5_000
 
 export type HostStatus =
   | { name: string; self: boolean; url: string; directory?: string; ok: true; hello: Hello; mismatch: boolean }
   | { name: string; self: boolean; url: string; directory?: string; ok: false; error: string }
 
-export async function probe(peer: Peer, timeout = HELLO_TIMEOUT): Promise<HostStatus> {
+export async function probe(peer: Peer, timeout = TIMEOUT): Promise<HostStatus> {
   const base = { name: peer.name, self: peer.self, url: peer.url, directory: peer.directory }
   try {
     const hello = await peer.rpc.hello({}, { signal: AbortSignal.timeout(timeout) })
@@ -23,28 +26,40 @@ export async function probe(peer: Peer, timeout = HELLO_TIMEOUT): Promise<HostSt
   }
 }
 
-function describe(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (error && typeof error === "object") {
-    const e = error as { type?: unknown; message?: unknown }
-    if (typeof e.message === "string") return typeof e.type === "string" ? `${e.type}: ${e.message}` : e.message
-  }
-  return String(error)
+export function formatHosts(statuses: HostStatus[]): string {
+  return statuses
+    .map((s) => {
+      const tag = s.self ? " (self)" : ""
+      if (!s.ok) return `✗ ${s.name}${tag}  unreachable: ${s.error}`
+      const marks = [
+        s.mismatch ? `version ${s.hello.version} ≠ ${VERSION}` : `v${s.hello.version}`,
+        s.hello.supervisor ? `supervisor ${s.hello.supervisor.host}/${s.hello.supervisor.sessionID}` : "no supervisor",
+        `${s.hello.workers} worker${s.hello.workers === 1 ? "" : "s"}`,
+        s.directory ? `dir ${s.directory}` : "no default dir",
+      ]
+      return `${s.mismatch ? "!" : "●"} ${s.name}${tag}  ${marks.join(" · ")}`
+    })
+    .join("\n")
 }
 
-export function formatHosts(statuses: HostStatus[]): string {
-  const lines = statuses.map((s) => {
-    const tag = s.self ? " (self)" : ""
-    if (!s.ok) return `✗ ${s.name}${tag}  unreachable: ${s.error}`
-    const marks = [
-      s.mismatch ? `version ${s.hello.version} ≠ ${VERSION}` : `v${s.hello.version}`,
-      s.hello.supervisor ? `supervisor ${s.hello.supervisor.host}/${s.hello.supervisor.sessionID}` : "no supervisor",
-      `${s.hello.workers} worker${s.hello.workers === 1 ? "" : "s"}`,
-      s.directory ? `dir ${s.directory}` : "no default dir",
-    ]
-    return `${s.mismatch ? "!" : "●"} ${s.name}${tag}  ${marks.join(" · ")}`
-  })
-  return lines.join("\n")
+export function formatRoster(entries: RosterEntry[], now = Date.now()): string {
+  if (entries.length === 0) return "No workers in the roster."
+  const glyph: Record<WorkerState, string> = { busy: "●", idle: "○", spawning: "◌", done: "✓", error: "✗", lost: "?" }
+  return entries
+    .map((e) => `${glyph[e.state]} ${e.host}/${e.name}  ${e.state}  ${age(now - e.lastSeen)}  ${e.sessionID}  ${e.directory}`)
+    .join("\n")
+}
+
+function age(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m}m`
+  return `${Math.round(m / 60)}h`
+}
+
+function parseFlags(text: string): Set<string> {
+  return new Set(text.split(/\s+/).filter((w) => w.startsWith("--")).map((w) => w.slice(2)))
 }
 
 export default Plugin.define({
@@ -61,14 +76,150 @@ export default Plugin.define({
       throw error
     }
 
-    await ctx.rpc.register(Mesh, {
+    const state = new State(ctx.storage)
+    const supervisor = new Supervisor(ctx, peers, state)
+
+    const note = (sessionID: string, text: string) => ctx.session.synthetic({ sessionID, text: `[mesh] ${text}` }).catch(() => {})
+
+    const stateOf = async (sessionID: string, active?: Record<string, unknown>): Promise<WorkerState> => {
+      try {
+        const info = await ctx.session.get({ sessionID })
+        const running = active ?? (await peers.me.client.session.active())
+        if (sessionID in running) return "busy"
+        if (info.outcome === "failed") return "error"
+        return "idle"
+      } catch {
+        return "lost"
+      }
+    }
+
+    const whoami = async (sessionID: string): Promise<Whoami> => {
+      const sup = await state.supervisor()
+      if (sup?.host === peers.self && sup.sessionID === sessionID) {
+        return { role: "supervisor", host: peers.self, sessionID, supervisor: sup }
+      }
+      const worker = await state.worker(sessionID)
+      if (worker) return { role: "worker", host: peers.self, sessionID, name: worker.name, supervisor: worker.supervisor }
+      return { role: "none", host: peers.self, sessionID }
+    }
+
+    const rpc = await ctx.rpc.register(Mesh, {
       async hello() {
-        return { host: peers.self, version: VERSION, workers: 0 }
+        const [sup, workers] = await Promise.all([state.supervisor(), state.workers()])
+        return { host: peers.self, version: VERSION, workers: workers.length, ...(sup ? { supervisor: sup } : {}) }
       },
+
+      async claim(input) {
+        const result = await supervisor.handleClaim(input)
+        if (result.ok) {
+          await rpc.events.emit("supervisor", input.release ? { released: true } : { supervisor: input })
+        }
+        return result
+      },
+
+      async register(input, { error }) {
+        for (const w of await state.workers()) {
+          if (w.name === input.name && w.sessionID !== input.sessionID) {
+            return error("name_taken", `worker name "${input.name}" is already used on ${peers.self}`, { name: input.name, sessionID: w.sessionID })
+          }
+        }
+        await state.setWorker(input.sessionID, { name: input.name, directory: input.directory, supervisor: input.supervisor, createdAt: Date.now() })
+        await ctx.session.instructions.entry
+          .put({
+            sessionID: input.sessionID,
+            key: "mesh.identity",
+            value: { role: "worker", name: input.name, host: peers.self, supervisor: input.supervisor },
+          })
+          .catch(() => {})
+        await rpc.events.emit("worker", { sessionID: input.sessionID, name: input.name })
+        return { ok: true }
+      },
+
+      async unregister({ sessionID }) {
+        const existing = await state.worker(sessionID)
+        if (!existing) return { removed: false }
+        await state.removeWorker(sessionID)
+        await ctx.session.instructions.entry.remove({ sessionID, key: "mesh.identity" }).catch(() => {})
+        await rpc.events.emit("worker", { sessionID, removed: true })
+        return { removed: true }
+      },
+
+      async list() {
+        const workers = await state.workers()
+        const active = await peers.me.client.session.active().catch(() => ({}))
+        const out: WorkerInfo[] = await Promise.all(
+          workers.map(async (w) => ({
+            sessionID: w.sessionID,
+            name: w.name,
+            directory: w.directory,
+            supervisor: w.supervisor,
+            state: await stateOf(w.sessionID, active),
+          })),
+        )
+        return { workers: out }
+      },
+
+      async whoami({ sessionID }) {
+        return whoami(sessionID)
+      },
+    })
+
+    await registerAgents(ctx)
+
+    await ctx.command.transform((editor) => {
+      editor.add({
+        name: "super",
+        description: "Claim the mesh supervisor role for this session. Flags: --status, --force, --release",
+        execute: async ({ sessionID, prompt }) => {
+          const flags = parseFlags(prompt.text)
+
+          if (flags.has("status")) {
+            const rows = await supervisor.status()
+            const views = new Set(rows.filter((r) => r.ok).map((r) => (r.ok && r.supervisor ? `${r.supervisor.host}/${r.supervisor.sessionID}` : "none")))
+            const lines = rows.map((r) => {
+              const tag = r.self ? " (self)" : ""
+              if (!r.ok) return `✗ ${r.peer}${tag}  unreachable: ${r.error}`
+              return `● ${r.peer}${tag}  ${r.supervisor ? `${r.supervisor.host}/${r.supervisor.sessionID} (claimed ${age(Date.now() - r.supervisor.claimedAt)} ago)` : "no supervisor"}`
+            })
+            const verdict = views.size > 1 ? "\nDISAGREEMENT: hosts do not agree on the supervisor. Resolve with /super --force from the side that should win." : ""
+            await note(sessionID, `supervisor status\n${lines.join("\n")}${verdict}`)
+            return
+          }
+
+          if (flags.has("release")) {
+            const result = await supervisor.release(sessionID)
+            if (!result.ok) {
+              await note(sessionID, result.held ? `this session is not the supervisor; ${result.held.host}/${result.held.sessionID} holds it.` : "no supervisor claim to release.")
+              return
+            }
+            await rpc.events.emit("supervisor", { released: true })
+            const skipped = result.unreachable.length ? ` Unreachable: ${result.unreachable.join(", ")}.` : ""
+            await note(sessionID, `supervisor released. Interrupted ${result.interrupted} worker(s); they stay registered.${skipped}`)
+            return
+          }
+
+          const result = await supervisor.claim(sessionID, { force: flags.has("force") })
+          if (!result.ok) {
+            const where = result.reason === "local-held" ? "this host" : result.on
+            await note(sessionID, `claim refused: ${result.held.host}/${result.held.sessionID} holds the supervisor (reported by ${where}). Use /super --force to take it.`)
+            return
+          }
+          await ctx.session.switchAgent({ sessionID, agent: "super" }).catch((e) => console.warn(`[madcat] switchAgent failed: ${describe(e)}`))
+          await ctx.session.instructions.entry
+            .put({ sessionID, key: "mesh.identity", value: { role: "supervisor", host: peers.self, sessionID } })
+            .catch(() => {})
+          await rpc.events.emit("supervisor", { supervisor: result.ref })
+          const roster = await state.roster()
+          const adopted = roster.length ? ` Adopted ${roster.length} existing roster entr${roster.length === 1 ? "y" : "ies"}.` : ""
+          const skipped = result.unreachable.length ? ` Unreachable (will learn on next contact): ${result.unreachable.join(", ")}.` : ""
+          await note(sessionID, `this session is now the mesh supervisor on ${peers.self}.${adopted}${skipped}`)
+        },
+      })
     })
 
     await ctx.tool.transform((editor) => {
       editor.namespace({ name: "mesh", description: "MADCAT mesh: hosts and sessions" })
+
       editor.add({
         name: "hosts",
         description:
@@ -80,6 +231,76 @@ export default Plugin.define({
           return { content: formatHosts(statuses) }
         },
       })
+
+      editor.add({
+        name: "whoami",
+        description: "Show this session's mesh role, host, name and supervisor location.",
+        input: z.object({}),
+        options: { namespace: "mesh" },
+        execute: async (_input, context) => {
+          const me = await whoami(context.sessionID)
+          const lines = [`role: ${me.role}`, `host: ${me.host}`, `session: ${me.sessionID}`]
+          if (me.name) lines.push(`name: ${me.name}`)
+          if (me.supervisor) lines.push(`supervisor: ${me.supervisor.host}/${me.supervisor.sessionID}`)
+          return { content: lines.join("\n") }
+        },
+      })
+
+      editor.add({
+        name: "sessions",
+        description:
+          "Worker roster seen by the supervisor. Optional filters by host and state. refresh=true asks every host for its live worker list first.",
+        input: z.object({
+          host: z.string().optional().describe("only workers on this host"),
+          state: z.enum(["spawning", "idle", "busy", "error", "done", "lost"]).optional(),
+          refresh: z.boolean().optional().describe("re-query every host before listing"),
+        }),
+        options: { namespace: "mesh" },
+        execute: async (input, context) => {
+          if (!(await supervisor.isSupervisor(context.sessionID))) {
+            return { content: "Only the supervisor can list the roster. Run /super to claim it." }
+          }
+          if (input.refresh) await refreshRoster()
+          let entries = await state.roster()
+          if (input.host) entries = entries.filter((e) => e.host === input.host)
+          if (input.state) entries = entries.filter((e) => e.state === input.state)
+          return { content: formatRoster(entries) }
+        },
+      })
     })
+
+    const refreshRoster = async () => {
+      const me = await state.supervisor()
+      if (!me || me.host !== peers.self) return
+      const now = Date.now()
+      await Promise.all(
+        peers.all.map(async (peer) => {
+          let workers: WorkerInfo[]
+          try {
+            workers = (await peer.rpc.list({}, { signal: AbortSignal.timeout(TIMEOUT) })).workers
+          } catch {
+            for (const e of await state.roster()) {
+              if (e.host === peer.name && e.state !== "lost") await state.setRoster(e.host, e.sessionID, { ...e, state: "lost" })
+            }
+            return
+          }
+          const mine = workers.filter((w) => w.supervisor.host === me.host && w.supervisor.sessionID === me.sessionID)
+          const seen = new Set<string>()
+          for (const w of mine) {
+            seen.add(w.sessionID)
+            await state.setRoster(peer.name, w.sessionID, { name: w.name, directory: w.directory, state: w.state, lastSeen: now })
+            await rpc.events.emit("roster", { host: peer.name, sessionID: w.sessionID, name: w.name, state: w.state })
+          }
+          for (const e of await state.roster()) {
+            if (e.host === peer.name && !seen.has(e.sessionID)) {
+              await state.removeRoster(e.host, e.sessionID)
+              await rpc.events.emit("roster", { host: e.host, sessionID: e.sessionID, removed: true })
+            }
+          }
+        }),
+      )
+    }
   },
 })
+
+export type { SupervisorRef }
