@@ -95,6 +95,11 @@ Rules
 - Your final message before going idle should be a \`mesh_report\`, not a chat
   reply; nobody reads your chat output directly.`
 
+/** Permission groups carried by every mesh tool (`options.permission`); agents deny the groups they must not see. */
+export const PERM = { super: "mesh.super", worker: "mesh.worker", common: "mesh.common" } as const
+
+const deny = (action: string) => ({ action, resource: "*", effect: "deny" as const })
+
 export async function registerAgents(ctx: Plugin.Context) {
   return ctx.agent.transform((editor) => {
     editor.update("super", (agent) => {
@@ -103,6 +108,7 @@ export async function registerAgents(ctx: Plugin.Context) {
       agent.mode = "primary"
       agent.hidden = false
       agent.system = SUPER_PROMPT
+      agent.permissions.push(deny(PERM.worker))
     })
     editor.update("worker", (agent) => {
       agent.name = "worker" as typeof agent.name
@@ -110,6 +116,12 @@ export async function registerAgents(ctx: Plugin.Context) {
       agent.mode = "primary"
       agent.hidden = true
       agent.system = WORKER_PROMPT
+      agent.permissions.push(deny(PERM.super))
     })
+    // Every other agent, primaries and subagents alike, sees no mesh tools at all.
+    for (const agent of editor.list()) {
+      if (agent.id === "super" || agent.id === "worker") continue
+      editor.update(agent.id, (a) => a.permissions.push(deny("mesh.*")))
+    }
   })
 }

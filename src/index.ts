@@ -1,7 +1,7 @@
 import { Plugin } from "@opencode/plugin"
 import { z } from "zod"
 import pkg from "../package.json" with { type: "json" }
-import { registerAgents } from "./agents.ts"
+import { PERM, registerAgents } from "./agents.ts"
 import { ConfigError, loadMesh } from "./config.ts"
 import { Peers, type Peer } from "./mesh.ts"
 import { Observer, type RosterUpdate } from "./observe.ts"
@@ -333,7 +333,7 @@ export default Plugin.define({
         description:
           "List every host in the mesh with reachability, plugin version, supervisor claim and default spawn directory. Self is marked.",
         input: z.object({}),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.super },
         execute: async () => {
           const statuses = await Promise.all(peers.all.map((p) => probe(p)))
           return { content: formatHosts(statuses) }
@@ -344,7 +344,7 @@ export default Plugin.define({
         name: "whoami",
         description: "Show this session's mesh role, host, name and supervisor location.",
         input: z.object({}),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.common },
         execute: async (_input, context) => {
           const me = await whoami(context.sessionID)
           const lines = [`role: ${me.role}`, `host: ${me.host}`, `session: ${me.sessionID}`]
@@ -363,7 +363,7 @@ export default Plugin.define({
           state: z.enum(["spawning", "idle", "busy", "error", "done", "lost"]).optional(),
           refresh: z.boolean().optional().describe("re-query every host before listing"),
         }),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.super },
         execute: async (input, context) => {
           if (!(await supervisor.isSupervisor(context.sessionID))) {
             return { content: "Only the supervisor can list the roster. Run /super to claim it." }
@@ -406,7 +406,7 @@ export default Plugin.define({
           directory: z.string().optional().describe("absolute working directory; defaults to the host's default"),
           prompt: z.string().optional().describe("first message to the worker, queued after spawn"),
         }),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.super },
         execute: (input, context) =>
           run(context.sessionID, async (sup) => {
             const host = input.host ?? peers.self
@@ -431,7 +431,7 @@ export default Plugin.define({
           kind: z.enum(["order", "ask", "answer"]).optional().describe("default order"),
           delivery: z.enum(["steer", "queue"]).optional().describe("default steer"),
         }),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.super },
         execute: (input, context) =>
           run(context.sessionID, async (sup) => {
             const t = await target(input.to)
@@ -453,7 +453,7 @@ export default Plugin.define({
           value: z.string().optional().describe("new orders; omit together with remove=true to clear"),
           remove: z.boolean().optional(),
         }),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.super },
         execute: (input, context) =>
           run(context.sessionID, async () => {
             const t = await target(input.to)
@@ -474,7 +474,7 @@ export default Plugin.define({
           to: z.string().describe("worker as host/name, name, or session id"),
           tail: z.number().int().positive().optional().describe("number of lines from the end; default 50"),
         }),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.super },
         execute: (input, context) =>
           run(context.sessionID, async () => {
             const t = await target(input.to)
@@ -489,7 +489,7 @@ export default Plugin.define({
           to: z.string().describe("worker as host/name, name, or session id"),
           resume: z.boolean().optional(),
         }),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.super },
         execute: (input, context) =>
           run(context.sessionID, async () => {
             const t = await target(input.to)
@@ -505,7 +505,7 @@ export default Plugin.define({
           to: z.string().describe("worker as host/name, name, or session id"),
           timeout: z.number().int().positive().optional().describe("seconds; default 1800"),
         }),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.super },
         execute: (input, context) =>
           run(context.sessionID, async () => {
             const t = await target(input.to)
@@ -521,7 +521,7 @@ export default Plugin.define({
         input: z.object({
           to: z.string().describe("worker as host/name, name, or session id"),
         }),
-        options: { namespace: "mesh" },
+        options: { namespace: "mesh", permission: PERM.super },
         execute: (input, context) =>
           run(context.sessionID, async () => {
             const t = await target(input.to)
@@ -529,6 +529,40 @@ export default Plugin.define({
             await steer.remove(t)
             return `removed ${t.host}/${t.name} (${t.sessionID})`
           }),
+      })
+
+      // --- worker tools: upward only, target read from workers/<me>, never supplied by the caller ---
+
+      const upward = async (sessionID: string, kind: "report" | "ask", text: string) => {
+        const worker = await state.worker(sessionID)
+        if (!worker) return { content: "This session is not a mesh worker." }
+        try {
+          const msgID = await steer.send(
+            { host: worker.supervisor.host, sessionID: worker.supervisor.sessionID },
+            { from: { host: peers.self, sessionID, name: worker.name }, kind, body: text, delivery: "steer" },
+          )
+          return { content: `${kind} delivered to the supervisor on ${worker.supervisor.host} (id ${msgID})` }
+        } catch (error) {
+          return { content: `error: ${kind} not delivered: ${describe(error)}` }
+        }
+      }
+
+      editor.add({
+        name: "report",
+        description:
+          "Report to the supervisor: unit done, blocked, or a finding that changes the plan. Wakes the supervisor. Include what you did, what changed, what is left, and what it must decide.",
+        input: z.object({ text: z.string().min(1) }),
+        options: { namespace: "mesh", permission: PERM.worker },
+        execute: (input, context) => upward(context.sessionID, "report", input.text),
+      })
+
+      editor.add({
+        name: "ask",
+        description:
+          "Ask the supervisor a question it must answer. Keep working on anything that does not depend on the answer; the reply arrives as a [mesh from …] (answer) message.",
+        input: z.object({ text: z.string().min(1) }),
+        options: { namespace: "mesh", permission: PERM.worker },
+        execute: (input, context) => upward(context.sessionID, "ask", input.text),
       })
     })
 

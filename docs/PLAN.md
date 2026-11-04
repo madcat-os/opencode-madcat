@@ -293,10 +293,22 @@ path.
 | `mesh_ask` | worker | ask the supervisor, `delivery: steer` |
 | `mesh_whoami` | supervisor + worker | own mesh id, role, host; for workers also where the supervisor is |
 
-Tool visibility is decided per call from local storage: the calling
-`sessionID` equals `supervisor` → supervisor set; has a `workers/<id>` entry →
-worker set; neither → no mesh tools at all. Mesh tools are **denied on `task`
-subagents** so disposable explorers can't flood the channel.
+Visibility is two layers:
+
+1. **Catalog (agent permissions).** Every mesh tool carries
+   `options.permission` = `mesh.super` (the steering tools), `mesh.worker`
+   (`mesh_report`, `mesh_ask`) or `mesh.common` (`mesh_whoami`). The server
+   drops a tool from an agent's snapshot when the last rule matching that
+   action is `deny` on `*`. So `super` denies `mesh.worker`, `worker` denies
+   `mesh.super`, and every other agent (`build`, `plan`, and the `general` /
+   `explore` subagents) denies `mesh.*`. Subagents launched from a worker
+   or the supervisor therefore see no mesh tools and can't flood the channel.
+   Verified on 2.2.5: worker sees `ask/report/whoami`, its `general` subagent
+   sees none.
+2. **Execution (local storage).** Each tool re-checks per call: steering
+   tools require the calling `sessionID` to be `supervisor`, worker tools
+   require a `workers/<id>` entry. This covers a `super`-agent session that
+   has not run `/super`, or a released supervisor.
 
 ## Agents (`ctx.agent.transform`)
 
@@ -600,6 +612,8 @@ All open questions are resolved. In addition to the table at the top:
 | TUI | In scope, phase 6. |
 | Observed events | `session.execution.{started,succeeded,failed,interrupted}` + `session.deleted`; events carry `data.sessionID` and `created`, no `location`. |
 | Roster writes | `applyRoster` in `index.ts` is the only writer; `Steer` never touches `roster/*`. |
+| Tool gating | `options.permission` groups `mesh.super` / `mesh.worker` / `mesh.common`, denied per agent; non-mesh agents deny `mesh.*`. Storage re-check at execute time. |
+| Worker → supervisor | `mesh_report` / `mesh_ask` are `delivery: steer`; the target is `workers/<me>.supervisor`, never an argument. |
 | Liveness | `hello` every 30s on roster hosts, `lost` after 3 failures, `list` reconcile on recovery; startup/refresh reconcile all peers. |
 
 ## Phases (proposed)
