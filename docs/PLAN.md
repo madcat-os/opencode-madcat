@@ -245,21 +245,31 @@ A plugin cannot attest sender identity (#58367). Mitigations:
 ## Observation: local watch, push to supervisor
 
 Each host runs one `ctx.event.subscribe({ types: [...] })` loop over its own
-sessions. For every event whose `sessionID` is in `workers/*`:
+sessions (`src/observe.ts`). For every event whose `sessionID` is in
+`workers/*`:
 
-- `session.idle` / `session.error` / `session.updated` → map to a state and
-  call `mesh.notify({ sessionID, state, at })` on `workers/<id>.supervisor`'s
-  host. The supervisor host updates `roster/<host>/<id>`.
-- Notify failures are retried with backoff and then dropped; the supervisor
-  reconciles on pull.
+- `session.execution.started` → `busy`; `session.execution.succeeded` and
+  `session.execution.interrupted` → `idle`; `session.execution.failed` →
+  `error`; `session.deleted` → drop `workers/<id>` and send `removed: true`.
+  (`session.idle` / `session.error` are not emitted for execution outcomes in
+  2.2.x; the `session.execution.*` family is.)
+- Each change is pushed with `mesh.notify` to `workers/<id>.supervisor`'s
+  host, retried after 1s, 4s, 15s, then dropped; the supervisor reconciles on
+  pull. A local supervisor goes through the same RPC.
+- `index.ts` owns `applyRoster`, the single writer of `roster/*`: `notify`,
+  the observer, `mesh_spawn` and `mesh_remove` all go through it, and it emits
+  the `roster` event only when name or state actually changed.
 
 The supervisor's host additionally:
 
-- Pings `mesh.hello()` on every host that appears in `roster/*` on an
-  interval. After N consecutive failures, marks that host's roster entries
-  `lost`. No auto-restart (prior-art lesson).
-- On its own startup, calls `mesh.list()` on every host in `roster/*` to
-  reconcile state after a restart.
+- Pings `mesh.hello()` every 30s on every host that appears in `roster/*`.
+  After 3 consecutive failures, marks that host's roster entries `lost`; on
+  the first success afterwards, reconciles that host via `mesh.list()`. No
+  auto-restart (prior-art lesson).
+- On its own startup and for `mesh_sessions refresh`, calls `mesh.list()` on
+  every configured peer (not just roster hosts) so workers spawned before a
+  roster loss are re-adopted; workers claimed by another supervisor are
+  ignored, roster entries the host no longer reports are dropped.
 
 The supervisor learns about its workers either by being woken via
 `mesh_report` (push) or by `mesh_sessions` (read `roster/*`, optionally
@@ -438,7 +448,7 @@ through this contract. Defined with `Rpc.define` in `src/rpc.ts`, exported as
 | `unregister({ sessionID })` | `remove` | worker's host | Delete `workers/<id>`. |
 | `list()` → `[{ sessionID, name, directory, state }]` | supervisor host | any host | Enumerate local `workers/*` with current state from `session.get`. |
 | `deliver({ to, from, msgID, kind, body, delivery })` → `{ delivered }` \| `unauthorized` | `send` | receiver's host | Authorize, mint nonce, local `session.prompt`. |
-| `notify({ sessionID, state, at })` | worker's host | supervisor's host | Update `roster/<host>/<id>`. |
+| `notify({ host, sessionID, state, at, removed? })` → `{ known }` | worker's host | supervisor's host | Update `roster/<host>/<id>`; `removed` drops it. |
 | `whoami({ sessionID })` → `{ role, host, name?, supervisor? }` | TUI | local host | Read `supervisor` / `workers/<id>`. |
 | `roster({ refresh? })` → `[{ host, sessionID, name, directory, state, lastSeen }]` | TUI | supervisor's host | Read `roster/*`; with `refresh`, fan out `list()` first. |
 | `read({ sessionID, host, tail })` | TUI | local host | Transcript tail via the `Steer` facade. |
@@ -588,6 +598,9 @@ All open questions are resolved. In addition to the table at the top:
 | Claim conflicts after partition | Best effort: fail on reachable `held`, skip unreachable, show disagreement in `--status` and the TUI, human resolves with `--force`. |
 | Plugin version mismatch | Warn, mark the peer, keep calling. |
 | TUI | In scope, phase 6. |
+| Observed events | `session.execution.{started,succeeded,failed,interrupted}` + `session.deleted`; events carry `data.sessionID` and `created`, no `location`. |
+| Roster writes | `applyRoster` in `index.ts` is the only writer; `Steer` never touches `roster/*`. |
+| Liveness | `hello` every 30s on roster hosts, `lost` after 3 failures, `list` reconcile on recovery; startup/refresh reconcile all peers. |
 
 ## Phases (proposed)
 

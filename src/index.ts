@@ -4,6 +4,7 @@ import pkg from "../package.json" with { type: "json" }
 import { registerAgents } from "./agents.ts"
 import { ConfigError, loadMesh } from "./config.ts"
 import { Peers, type Peer } from "./mesh.ts"
+import { Observer, type RosterUpdate } from "./observe.ts"
 import { Mesh, type Hello, type SupervisorRef, type Whoami, type WorkerInfo, type WorkerState } from "./rpc.ts"
 import { State, type RosterEntry } from "./state.ts"
 import { Steer, SteerError, supervisorAddress, type Target } from "./steer.ts"
@@ -85,7 +86,7 @@ export default Plugin.define({
 
     const state = new State(ctx.storage)
     const supervisor = new Supervisor(ctx, peers, state)
-    const steer = new Steer(peers, state)
+    const steer = new Steer(peers)
 
     const note = (sessionID: string, text: string) => ctx.session.synthetic({ sessionID, text: `[mesh] ${text}` }).catch(() => {})
 
@@ -118,6 +119,31 @@ export default Plugin.define({
       }
       return ref
     }
+
+    /** Single writer for roster/*: merges an update, emits the roster event, drops entries on removal. */
+    const applyRoster = async (host: string, sessionID: string, update: RosterUpdate): Promise<boolean> => {
+      const existing = await state.rosterEntry(host, sessionID)
+      if (update.removed) {
+        if (!existing) return false
+        await state.removeRoster(host, sessionID)
+        await rpc.events.emit("roster", { host, sessionID, name: existing.name, removed: true })
+        return true
+      }
+      if (!existing && (!update.name || !update.directory)) return false
+      const next = {
+        name: update.name ?? existing!.name,
+        directory: update.directory ?? existing!.directory,
+        state: update.state ?? existing?.state ?? "idle",
+        lastSeen: Date.now(),
+      }
+      await state.setRoster(host, sessionID, next)
+      if (!existing || existing.state !== next.state || existing.name !== next.name) {
+        await rpc.events.emit("roster", { host, sessionID, name: next.name, state: next.state })
+      }
+      return true
+    }
+
+    const observer = new Observer(ctx, peers, state, applyRoster)
 
     const stateOf = async (sessionID: string, active?: Record<string, unknown>): Promise<WorkerState> => {
       try {
@@ -199,6 +225,13 @@ export default Plugin.define({
 
       async whoami({ sessionID }) {
         return whoami(sessionID)
+      },
+
+      async notify(input) {
+        const me = await state.supervisor()
+        if (!me || me.host !== peers.self) return { known: false }
+        const known = await applyRoster(input.host, input.sessionID, input.removed ? { removed: true } : { state: input.state })
+        return { known }
       },
 
       async deliver(input, { error }) {
@@ -383,7 +416,7 @@ export default Plugin.define({
             if (!directory) throw new SteerError(`host ${host} has no default directory; pass one`)
             if (await resolve(`${host}/${input.name}`)) throw new SteerError(`worker ${host}/${input.name} already exists`)
             const t = await steer.spawn(sup, { host, name: input.name, directory, orders: input.orders, prompt: input.prompt })
-            await rpc.events.emit("roster", { host, sessionID: t.sessionID, name: input.name, state: "spawning" })
+            await applyRoster(host, t.sessionID, { name: input.name, directory, state: "spawning" })
             return `spawned ${host}/${input.name} (${t.sessionID}) in ${directory}${input.prompt ? "; first order queued" : ""}`
           }),
       })
@@ -492,44 +525,20 @@ export default Plugin.define({
         execute: (input, context) =>
           run(context.sessionID, async () => {
             const t = await target(input.to)
+            await applyRoster(t.host, t.sessionID, { removed: true })
             await steer.remove(t)
-            await rpc.events.emit("roster", { host: t.host, sessionID: t.sessionID, removed: true })
             return `removed ${t.host}/${t.name} (${t.sessionID})`
           }),
       })
     })
 
-    const refreshRoster = async () => {
-      const me = await state.supervisor()
-      if (!me || me.host !== peers.self) return
-      const now = Date.now()
-      await Promise.all(
-        peers.all.map(async (peer) => {
-          let workers: WorkerInfo[]
-          try {
-            workers = (await peer.rpc.list({}, { signal: AbortSignal.timeout(TIMEOUT) })).workers
-          } catch {
-            for (const e of await state.roster()) {
-              if (e.host === peer.name && e.state !== "lost") await state.setRoster(e.host, e.sessionID, { ...e, state: "lost" })
-            }
-            return
-          }
-          const mine = workers.filter((w) => w.supervisor.host === me.host && w.supervisor.sessionID === me.sessionID)
-          const seen = new Set<string>()
-          for (const w of mine) {
-            seen.add(w.sessionID)
-            await state.setRoster(peer.name, w.sessionID, { name: w.name, directory: w.directory, state: w.state, lastSeen: now })
-            await rpc.events.emit("roster", { host: peer.name, sessionID: w.sessionID, name: w.name, state: w.state })
-          }
-          for (const e of await state.roster()) {
-            if (e.host === peer.name && !seen.has(e.sessionID)) {
-              await state.removeRoster(e.host, e.sessionID)
-              await rpc.events.emit("roster", { host: e.host, sessionID: e.sessionID, removed: true })
-            }
-          }
-        }),
-      )
-    }
+    const refreshRoster = () => observer.reconcileAll(true)
+
+    observer.start()
+    void observer.reconcileAll(true).catch((e) => console.warn(`[madcat] startup reconcile: ${describe(e)}`))
+    void state.pruneNonces().catch(() => {})
+
+    return () => observer.stop()
   },
 })
 

@@ -1,6 +1,5 @@
 import type { Peers } from "./mesh.ts"
 import type { Delivery, MeshAddress, MessageKind, SupervisorRef } from "./rpc.ts"
-import type { State } from "./state.ts"
 import { describe } from "./supervisor.ts"
 
 const TIMEOUT = 10_000
@@ -24,12 +23,9 @@ export class SteerError extends Error {
   override name = "SteerError"
 }
 
-/** Thin dispatch over the session API + mesh RPC of whichever host owns the target. */
+/** Thin dispatch over the session API + mesh RPC of whichever host owns the target. Roster writes live in index.ts. */
 export class Steer {
-  constructor(
-    private readonly peers: Peers,
-    private readonly state: State,
-  ) {}
+  constructor(private readonly peers: Peers) {}
 
   private peer(host: string) {
     const peer = this.peers.get(host)
@@ -60,12 +56,6 @@ export class Steer {
       await peer.client.session.remove({ sessionID: session.id }).catch(() => {})
       throw new SteerError(`setting orders on ${input.host} failed: ${describe(error)}`)
     }
-    await this.state.setRoster(input.host, session.id, {
-      name: input.name,
-      directory: input.directory,
-      state: "spawning",
-      lastSeen: Date.now(),
-    })
     if (input.prompt) {
       await this.send(target, { from: supervisorAddress(supervisor), kind: "order", body: input.prompt, delivery: "queue" })
     }
@@ -131,7 +121,6 @@ export class Steer {
     const peer = this.peer(target.host)
     await peer.rpc.unregister({ sessionID: target.sessionID }, { signal: AbortSignal.timeout(TIMEOUT) }).catch(() => {})
     await peer.client.session.remove({ sessionID: target.sessionID }, { signal: AbortSignal.timeout(TIMEOUT) }).catch(() => {})
-    await this.state.removeRoster(target.host, target.sessionID)
   }
 }
 

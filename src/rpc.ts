@@ -113,6 +113,16 @@ export const Mesh = Rpc.define({
       input: z.object({ sessionID: z.string() }),
       output: Whoami,
     },
+    notify: {
+      input: z.object({
+        host: z.string().describe("host the worker lives on"),
+        sessionID: z.string(),
+        state: WorkerState,
+        at: z.number(),
+        removed: z.boolean().optional().describe("the session was deleted on its host"),
+      }),
+      output: z.object({ known: z.boolean() }),
+    },
     deliver: {
       input: DeliverInput,
       output: z.object({ delivered: z.boolean() }),
