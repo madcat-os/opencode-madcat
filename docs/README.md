@@ -16,6 +16,15 @@ with `Accept: text/markdown`.
 | [plugins-migrate-v1.md](plugins-migrate-v1.md) | `/build/plugins/migrate-v1/` | V1 → V2 plugin API migration |
 | [plugins-config.md](plugins-config.md) | `/plugins/` | Loading and configuring plugins in `opencode.json(c)` |
 | [plugins-cli-settings.md](plugins-cli-settings.md) | `/cli/plugins/` | Terminal plugin settings in `cli.json` |
+| [client-javascript.md](client-javascript.md) | `/build/client/` | `@opencode/client` — remote session API, event streaming, RPC over HTTP |
+| [cli-web.md](cli-web.md) | `/cli/web/` | Exposing a server on the network, Basic auth, `OPENCODE_PASSWORD`, `serve` |
+| [network.md](network.md) | `/network/` | Proxy and certificate env for the service |
+| [openapi.json](openapi.json) | `/openapi.json` | Full HTTP API spec (the `/api/` docs page is HTML-only) |
+
+Project docs (ours, not snapshots):
+
+- [PLAN.md](PLAN.md) — mesh steering architecture and decisions
+- [PRIOR-ART.md](PRIOR-ART.md) — survey of existing session-orchestration plugins
 
 Refresh with:
 
