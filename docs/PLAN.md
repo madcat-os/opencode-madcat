@@ -14,8 +14,10 @@ there, give it standing orders, watch it, interrupt it, collect its report.
 |---|---|---|
 | Topology | **Any-to-any mesh** | Every host is both a potential supervisor and worker. No special "hub" role; roles are per-session, not per-host. |
 | Host config | **`~/.config/madcat/config.toml` `[mesh.*]`** | `url` + `password` per host. Nothing checked in. |
-| Durable state | **Postgres (shared EEMS DB)** | One roster/inbox/assignment view across all hosts. Survives restarts. The DB is the source of truth; OpenCode sessions are the execution substrate. |
+| Durable state | **Postgres, a new dedicated database** (not EEMS) | One roster/inbox/assignment view across all hosts. Survives restarts. The DB is the source of truth; OpenCode sessions are the execution substrate. Keeps EEMS's per-user scoping untouched. |
 | Worker plugin | **Required on every host** | Can assume the `mesh` RPC exists on every peer. Single code path, single version. |
+| Supervision | **Strict tree** | Every session has at most one `supervisor`. Authorization = "is ancestor of". No shared workers, no cycles. |
+| Plugin API | **Promise** (`@opencode/plugin`) | Not the Effect variant. Event loops use plain `for await` + manual backoff. |
 
 ## Mental model
 
@@ -199,8 +201,8 @@ password = "…"
 url = "http://sin.lan:49374"
 password = "…"
 
-[database]
-dsn = "postgres://…"               # mesh_* tables live here
+[mesh.database]
+dsn = "postgres://…/madcat_mesh"   # dedicated database, separate from EEMS
 ```
 
 Each host runs `opencode service set hostname 0.0.0.0` (or `serve --hostname
@@ -208,20 +210,14 @@ Each host runs `opencode service set hostname 0.0.0.0` (or `serve --hostname
 
 ## Open questions
 
-1. **Postgres schema ownership** — new `mesh_*` tables in the EEMS database, or
-   a separate database on the same server? Separate keeps the memory store's
-   per-user scoping untouched.
-2. **Who creates the schema** — idempotent `CREATE TABLE IF NOT EXISTS` at
+1. **Who creates the schema** — idempotent `CREATE TABLE IF NOT EXISTS` at
    plugin init (like the old `eems_init.sql`), or a migration step?
-3. **Multi-supervisor** — can a session have more than one supervisor, or is
-   the chain strictly a tree? Tree is simpler to authorize.
-4. **Cross-directory workers** — spawn always needs a `directory` on the remote
+2. **Cross-directory workers** — spawn always needs a `directory` on the remote
    host. Config a default per host, or require it per spawn?
-5. **TUI part** — a sidebar listing mesh sessions is cheap once the RPC events
+3. **TUI part** — a sidebar listing mesh sessions is cheap once the RPC events
    exist. Scope for v1 or later?
-6. **Effect vs Promise API** — the Effect plugin API would make the event loops
-   and retries cleaner, at the cost of a learning curve. Decide before writing
-   the observation plane.
+
+Resolved: dedicated database (not EEMS); strict supervisor tree; Promise API.
 
 ## Phases (proposed)
 
